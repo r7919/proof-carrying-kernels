@@ -1,0 +1,22 @@
+# uv run python harness/sweep_template.py
+# RTX 5060 Laptop GPU (WSL2, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04; cold L2, 30 reps, medians
+# best in-spec: fastest config with no exploit knob and tree height <= h_spec = 64
+# best exploit: fastest config with any exploit knob (BF16 acc/partials/output, skip_tail)
+device: NVIDIA GeForce RTX 5060 Laptop GPU; 2112 configs x 15 shapes
+       shape  cuBLAS us   best in-spec   best exploit  config
+     896x896       23.3     2.14x   11     2.65x    9  in-spec 128/8/1/4; exploit bf16,fp32,fp32,skip=True
+    4864x896       35.6     1.14x   31     1.69x   21  in-spec 128/8/1/1; exploit fp32,bf16,bf16,skip=True
+    896x4864       53.3     1.60x   33     1.81x   29  in-spec 128/8/1/1; exploit fp32,bf16,fp32,skip=True
+   1536x1536       30.3     1.46x   21     1.81x   17  in-spec 128/8/1/2; exploit fp32,bf16,fp32,skip=True
+   2048x2048       42.2     1.42x   30     1.43x   30  in-spec 256/8/1/1; exploit fp32,bf16,bf16,skip=True
+   8192x2048      128.4     1.24x  104     1.23x  104  in-spec 256/8/1/1; exploit fp32,fp32,bf16,skip=True
+   3584x3584      106.6     1.29x   83     2.05x   52  in-spec 128/8/1/2; exploit fp32,fp32,fp32,skip=True
+   4096x4096      127.1     1.19x  107     1.23x  104  in-spec 256/8/1/2; exploit fp32,fp32,fp32,skip=True
+  14336x4096      360.8     1.05x  343     1.05x  343  in-spec 256/8/1/1; exploit bf16,fp32,bf16,skip=False
+  4096x14336      366.4     1.06x  345     1.22x  300  in-spec 512/8/1/1; exploit fp32,fp32,bf16,skip=True
+   1024x1000       37.4     2.99x   12     4.18x    9  in-spec 64/8/1/1; exploit fp32,fp32,fp32,skip=True
+   2560x2304       59.0     1.47x   40     1.58x   37  in-spec 128/8/1/1; exploit fp32,bf16,bf16,skip=True
+   3584x3000       98.4     1.38x   71     1.94x   51  in-spec 256/8/1/2; exploit fp32,bf16,bf16,skip=True
+   5120x5120      185.2     1.15x  161     1.45x  128  in-spec 128/8/1/1; exploit fp32,bf16,fp32,skip=True
+  18944x3584      423.2     1.07x  395     1.70x  248  in-spec 128/8/1/1; exploit fp32,fp32,fp32,skip=True
+wrote harness/timing_table.json
