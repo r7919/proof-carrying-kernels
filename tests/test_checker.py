@@ -137,3 +137,20 @@ def test_crafted_output_passes_at_most_half_of_sign_draws() -> None:
     trials = 4000
     passes = sum(bool(checker.verdict(y.astype(np.float32), rng)[0]) for _ in range(trials))
     assert passes / trials <= 0.5 + 0.03
+
+
+def test_spread_error_passes_at_most_13_16_of_sign_draws() -> None:
+    """Empirical mirror of T4's Paley-Zygmund part: every output is off by less than tau,
+    but ||D||_2 >= 2 tau, so a single check passes for at most 13/16 of sign vectors."""
+    rng = np.random.default_rng(6)
+    b, n = 8, 256
+    W = bf16(rng.standard_normal((b, n)) * 0.02)
+    x = bf16(rng.standard_normal(n))
+    checker = BlockedChecker(W, x, b, tree_height(n, 32))
+    y = emulate_gemv(W, x, 32).astype(np.float64)
+    tau = checker.tau_base[0]
+    D = rng.choice([-1.0, 1.0], b) * (2.05 * tau / np.sqrt(b))  # each |D_i| < tau
+    assert np.all(np.abs(D) < tau) and np.linalg.norm(D) >= 2 * tau
+    trials = 4000
+    passes = sum(bool(checker.verdict((y + D).astype(np.float32), rng)[0]) for _ in range(trials))
+    assert passes / trials <= 13 / 16 + 0.03
