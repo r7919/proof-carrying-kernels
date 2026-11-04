@@ -1,4 +1,5 @@
 import math
+from fractions import Fraction
 
 import ml_dtypes
 import numpy as np
@@ -6,7 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pck.fp import U32, bf16, gamma, round_up_f32, tree_height
+from pck.fp import U32, bf16, ceil_div, gamma, round_up_f32, tree_height
 
 f32 = st.floats(width=32, allow_nan=False)
 F32_TINY = float(np.finfo(np.float32).tiny)
@@ -123,3 +124,28 @@ class TestTreeHeight:
     def test_rejects_empty(self) -> None:
         with pytest.raises(ValueError, match="positive"):
             tree_height(0, 4)
+
+    @pytest.mark.parametrize(
+        ("n", "threads", "vec", "expected"),
+        [(4096, 256, 8, 23), (4100, 256, 8, 31), (4096, 128, 8, 38), (1, 32, 8, 12)],
+    )
+    def test_vectorized_known_values(self, n: int, threads: int, vec: int, expected: int) -> None:
+        assert tree_height(n, threads, vec) == expected
+
+    @given(st.integers(1, 10**5), st.integers(0, 10), st.integers(1, 16))
+    def test_vectorized_formula(self, n: int, log_t: int, vec: int) -> None:
+        t = 2**log_t
+        chunk = vec * math.ceil(math.ceil(n / vec) / t)
+        assert tree_height(n, t, vec) == chunk - 1 + log_t
+
+    def test_vec_one_is_contiguous_layout(self) -> None:
+        assert all(tree_height(n, 64, 1) == tree_height(n, 64) for n in range(1, 500))
+
+    def test_rejects_bad_vec(self) -> None:
+        with pytest.raises(ValueError, match="vec"):
+            tree_height(10, 4, 0)
+
+
+@given(st.integers(0, 10**9), st.integers(1, 10**6))
+def test_ceil_div(a: int, b: int) -> None:
+    assert ceil_div(a, b) == math.ceil(Fraction(a, b))
