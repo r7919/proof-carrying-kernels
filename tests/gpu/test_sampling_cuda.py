@@ -97,7 +97,8 @@ def test_fp32_topp_sampler_passes_and_masses_match(vocab: int, p: float, temp: f
         a = lg[b].cpu().numpy()
         sel = selected[b, : lengths[b]].cpu().numpy()
         assert check_topp(a, sel, p, temp, tol=1e-5)
-        assert math.isclose(float(res.mass[b]), float(softmax64(a, temp)[sel].sum()), rel_tol=1e-12)
+        mass = float(softmax64(a, temp)[sel].sum())
+        assert math.isclose(float(res.mass[b]), mass, rel_tol=16 * 2.0**-24)  # FP32 expf
 
 
 @pytest.mark.parametrize("delta", [-1, 1])
@@ -145,7 +146,8 @@ def test_segment_count_does_not_change_verdicts(segments: int) -> None:
     ref_p = check_topp_gpu(lg, nucleus, lengths, 0.9, tol=1e-5, segments=1)
     got_p = check_topp_gpu(lg, nucleus, lengths, 0.9, tol=1e-5, segments=segments)
     assert got_p.passed.all() and ref_p.passed.all()
-    torch.testing.assert_close(got_p.mass, ref_p.mass, rtol=1e-9, atol=0)  # order only
+    # Segment maxima change each expf argument, so masses agree to FP32 rounding only.
+    torch.testing.assert_close(got_p.mass, ref_p.mass, rtol=16 * 2.0**-24, atol=0)
 
 
 def test_vocabulary_beyond_shared_memory_bitmap() -> None:
