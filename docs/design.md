@@ -20,7 +20,7 @@ about the checker, not about the kernels.
  └──────────────────────────┘               └────────────────────────────────────────┘
  ┌──────────────────────────┐ selection, token ┌─────────────────────────────────────┐
  │ top-k / top-p sampler    │ ───────────────▶ │ sampling checker (exact comparisons,│
- └──────────────────────────┘                  │ FP64 masses with explicit slack)    │
+ └──────────────────────────┘                  │ FP64 sums, explicit slack)          │
                                                └─────────────────────────────────────┘
 ```
 
@@ -77,7 +77,7 @@ rejects `sorry` and any non-standard axiom).
 | `t4_spread_computed` (T4, Paley-Zygmund) | as T4; deviation with \|\|D\|\|_2 >= 2 (tau + E + u a.\|x\|) | same |
 | `topK_check_iff_max_sum`, `prefix_iff_min_ge_max` | logits are real numbers (no NaN) | NaN check and `min_sel >= max_rej` in `sampling_kernel.cu` |
 | `topP_computed_minimal`, `topP_softmax_computed` | as top-k; checker masses within `eps` of the true softmax masses (assumed) | prefix check, `mass >= p - slack`, `mass - p_min < p + slack` in `check_topp`, `sampling_kernel.cu` |
-| `topP_computed_sound` | the sampler's own masses within `tol`; `slack >= tol + eps` | `slack = tol + gamma_{V+2}(u64)` (CPU), `tol + gamma_{V+3S+16}(u64)` (GPU) |
+| `topP_computed_sound` | the sampler's own masses within `tol`; `slack >= tol + eps` | `slack = tol + eps` in `check_topp` (CPU) and `check_topp_gpu` |
 
 ### Assumed, not proven
 
@@ -88,10 +88,12 @@ rejects `sorry` and any non-standard axiom).
   Oishi 2005) is within `gamma_{2L}(u32)^2 * sum |c_j x_j|` of its chain's exact sum, plus
   an underflow floor. Its proof needs bit-level floating-point semantics (exactness of
   TwoSum), which the real-number rounding model cannot express.
-- CUDA's FP64 `exp` is within 1 ulp (NVIDIA's documented bound), for the top-p masses.
-- The top-p checker's FP64 masses (exp, sums, normalization) are within
-  `gamma_{V+2}(u64)` (CPU) or `gamma_{V+3S+16}(u64)` (GPU, `S` segments) of the true
-  softmax masses. The top-p theorems take this error `eps` as a hypothesis.
+- CUDA's FP32 `expf` is within 2 ulp and FP64 `exp` within 1 ulp (NVIDIA's documented
+  bounds, without fast math), for the top-p masses.
+- The top-p checker's masses are within `gamma_{V+2}(u64)` of the true softmax masses on
+  the CPU (FP64 throughout), and within `16 u32 + V 2^-146 + gamma_{V+3S+16}(u64)` on the
+  GPU (`S` segments; FP32 `expf` on a split argument, FP64 sums; derivation in
+  `check_topp_gpu`). The top-p theorems take this error `eps` as a hypothesis.
 - The proofs cover the checker's algorithm; the CUDA source is kept small and tested
   against FP64 references to close that gap.
 
@@ -101,6 +103,10 @@ rejects `sorry` and any non-standard axiom).
   that alone is 4.7%, too close to the 5% budget. b = 64 stays available at about 2x finer
   detection.
 - **BF16 `a`, rounded up.** Halves the bound's traffic for at most 0.8% looser `tau`.
+- **FP32 `expf` in the top-p checker.** Each term's argument is split into an FP32 part
+  and a first-order correction, so the error stays near 6 u32 for every argument (an FP32
+  argument alone reaches about 100 u32). The slack grows by about 1e-6, below the sampler's
+  usual `tol`.
 - **Compensated FP32 instead of FP64 in the hot loop.** Consumer GPUs run FP64 at 1/64 of
   FP32; the FP64 FMA cost 8-10 us per check on large matrices. Dot2 costs nothing measurable
   and adds about 4e-12 relative to `tau`.
