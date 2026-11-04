@@ -74,6 +74,7 @@ rejects `sorry` and any non-standard axiom).
 | `t3_no_false_alarm` (T3) | T1 plus the above | the kernel's verdict `fabs(rho) <= tau` |
 | `t3_single_fault_detected` | T2 plus the above | |
 | `t4_computed` (T4) | `r` uniform and independent of `y` | trusted sign draw; commit-then-challenge in evaluation |
+| `t4_spread_computed` (T4, Paley-Zygmund) | as T4; deviation with \|\|D\|\|_2 >= 2 (tau + E + u a.\|x\|) | same |
 | `topK_check_iff_max_sum`, `prefix_iff_min_ge_max` | logits are real numbers (no NaN) | NaN check and `min_sel >= max_rej` in `sampling_kernel.cu` |
 
 ### Assumed, not proven
@@ -89,8 +90,7 @@ rejects `sorry` and any non-standard axiom).
 - The proofs cover the checker's algorithm; the CUDA source is kept small and tested
   against FP64 references to close that gap.
 
-Not yet proven: the top-p check with its tolerance, and the Paley-Zygmund part of T4
-(spread-out errors with large `||D||_2` but no large single coordinate).
+Not yet proven: the top-p check with its tolerance.
 
 ## Design decisions and findings
 
