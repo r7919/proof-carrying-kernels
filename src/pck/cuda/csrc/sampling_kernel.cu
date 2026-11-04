@@ -5,8 +5,12 @@
 //            atomicOr; an index out of range or already present marks the row malformed.
 //   kernel 2 (rows x segments blocks): each segment computes the exact FP32 min over its
 //            selected logits, max over its rejected logits and its own max m_s, a NaN flag,
-//            and (top-p) z_s = sum exp((l - m_s) / T) over all and over selected logits, in
-//            FP64 with CUDA's exp (max error 1 ulp). The last segment of the row to finish
+//            and (top-p) z_s = sum exp((l - m_s) / T) over all and over selected logits,
+//            summed in FP64. Each term uses FP32 expf (max error 2 ulp), since consumer
+//            GPUs run FP64 at 1/64 rate: the argument d = (l - m_s) / T is formed in FP64,
+//            split as d = hi + lo with hi = fp32(d), and e = expf(hi) * (1 + lo). The split
+//            keeps the error relative to e at about 6 u32 for any |d|; an FP32 argument
+//            alone would add |d| u32, up to 100x more. The last segment of the row to finish
 //            (atomic ticket) merges in a fixed order: M = max m_s,
 //            Z = sum z_s * exp((m_s - M) / T), and decides.
 // top-k passes iff the selection is well formed with length k, no logit is NaN, and
@@ -136,8 +140,13 @@ __global__ void __launch_bounds__(kThreads)
   double z = 0.0, z_sel = 0.0;
   if (top_p && v[2] > -INFINITY) {
     const double m = static_cast<double>(v[2]);
+    const double inv_t = 1.0 / temperature;
     for (int64_t j = j0 + t; j < j1; j += kThreads) {
-      const double e = exp((static_cast<double>(l[j]) - m) / temperature);
+      const double d = __dmul_rn(static_cast<double>(l[j]) - m, inv_t);
+      const float hi = __double2float_rn(d);
+      const float lo = __double2float_rn(d - static_cast<double>(hi));  // |lo| <= u32 |d|
+      const float eh = expf(hi);
+      const double e = static_cast<double>(__fmaf_rn(eh, lo, eh));  // e^lo ~ 1 + lo
       z = __dadd_rn(z, e);
       if (bitmap[j >> 5] & (1u << (j & 31))) z_sel = __dadd_rn(z_sel, e);
     }

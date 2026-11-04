@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import torch
 
 from pck.cuda._ext import extension
-from pck.fp import U64, ceil_div, gamma
+from pck.fp import U32, U64, ceil_div, gamma
 
 BLOCKS_PER_SM = 4
 MIN_SEGMENT = 4096  # logits per segment, at least
@@ -69,17 +69,23 @@ def check_topp_gpu(
 ) -> SamplingCheck:
     """Check that ``selected[b, :lengths[b]]`` is a valid, minimal top-p nucleus of row b.
 
-    ``tol`` is the sampler's declared probability error; the checker adds its own FP64
-    rounding slack. CUDA's FP64 exp is within 1 ulp and each of the S segment partials is
-    rescaled with one more exp, multiply and add, so each mass is within
-    gamma_{V+3S+16}(u64) of exact.
+    ``tol`` is the sampler's declared probability error; the checker adds its own rounding
+    slack. Each of the V terms comes from FP32 expf (within 2 ulp, so 4 u32) on a split
+    argument (1 + lo for e^lo, rounding of lo and the FMA: under 2 u32 more), so within
+    6 u32 relative, plus at most 2^-148 absolute where it underflows; the sums are FP64.
+    Each of the S segment partials is rescaled with one more FP64 exp, multiply and add.
+    The largest term is exactly 1, so Z >= 1, and each mass (a ratio of two such sums) is
+    within 2 * (6 u32 + V 2^-148) + gamma_{V+3S+16}(u64) of exact; the slack rounds this up
+    to 16 u32 + V 2^-146 + gamma_{V+3S+16}(u64).
     """
     if not 0 < p <= 1:
         raise ValueError(f"p must be in (0, 1], got {p}")
     if tol < 0:
         raise ValueError(f"tol must be non-negative, got {tol}")
     segs = default_segments(logits) if segments is None else segments
-    slack = math.nextafter(tol + gamma(logits.shape[1] + 3 * segs + 16, U64), math.inf)
+    vocab = logits.shape[1]
+    own = 16 * U32 + math.ldexp(vocab, -146) + gamma(vocab + 3 * segs + 16, U64)
+    slack = math.nextafter(tol + own, math.inf)
     out = extension().sampling_check(
         logits, selected, lengths, 0, True, p, temperature, slack, segs
     )
