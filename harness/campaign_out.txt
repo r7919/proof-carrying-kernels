@@ -1,0 +1,93 @@
+# uv run python harness/campaign.py
+# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04
+device: NVIDIA GeForce RTX 5060 Laptop GPU; torch 2.11.0+cu128; seed 0
+
+== false alarms: b = 128, K = 8; 2688 block checks per kernel per trial
+    kernel   block checks  alarms  max |rho|/tau   by distribution (max |rho|/tau)
+ coalesced     10,002,048       0       3.77e-03   gauss 5.75e-04, student-t 3.38e-03, mixed-scale 2.48e-03, outliers 3.77e-03   (12 s)
+     naive     10,002,048       0       3.82e-03   gauss 7.15e-04, student-t 2.40e-03, mixed-scale 2.98e-03, outliers 3.82e-03   (13 s)
+
+== false alarms: b = 64, K = 8; 5376 block checks per kernel per trial
+    kernel   block checks  alarms  max |rho|/tau   by distribution (max |rho|/tau)
+ coalesced     10,004,736       0       5.49e-03   gauss 8.69e-04, student-t 3.12e-03, mixed-scale 3.73e-03, outliers 5.49e-03   (6 s)
+     naive     10,004,736       0       5.39e-03   gauss 7.99e-04, student-t 5.39e-03, mixed-scale 3.68e-03, outliers 5.25e-03   (7 s)
+
+== bit flips: 4096 x 4096, one flip per block per trial, 200 trials per cell
+
+  b = 64, x ~ gauss: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    0.0%    0.0%
+      14  mantissa    0.1%    0.2%
+      16  mantissa   44.1%   43.0%
+      18  mantissa   84.6%   84.4%
+      20  mantissa   96.3%   95.9%
+      22  mantissa   99.0%   99.0%
+      23  exponent   99.5%   99.4%
+      27  exponent   99.7%   99.7%
+      30  exponent  100.0%  100.0%
+      31      sign   99.8%   99.9%
+
+  b = 64, x ~ student-t: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    0.1%    0.0%
+      14  mantissa    7.2%    6.8%
+      16  mantissa   65.0%   65.1%
+      18  mantissa   90.7%   91.0%
+      20  mantissa   97.7%   97.9%
+      22  mantissa   99.5%   99.6%
+      23  exponent   99.7%   99.8%
+      27  exponent   99.8%   99.8%
+      30  exponent  100.0%  100.0%
+      31      sign   99.8%   99.9%
+
+  b = 64, x ~ outliers: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    1.5%    1.0%
+      14  mantissa   52.5%   52.7%
+      16  mantissa   87.3%   87.7%
+      18  mantissa   96.7%   96.9%
+      20  mantissa   99.2%   99.2%
+      22  mantissa   99.8%   99.8%
+      23  exponent   99.9%   99.9%
+      27  exponent  100.0%   99.9%
+      30  exponent  100.0%  100.0%
+      31      sign  100.0%  100.0%
+
+  b = 128, x ~ gauss: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    0.0%    0.0%
+      14  mantissa    0.0%    0.0%
+      16  mantissa   11.7%   11.7%
+      18  mantissa   69.5%   68.6%
+      20  mantissa   92.3%   92.1%
+      22  mantissa   98.1%   98.1%
+      23  exponent   99.1%   99.2%
+      27  exponent   99.3%   99.3%
+      30  exponent  100.0%  100.0%
+      31      sign   99.7%   99.7%
+
+  b = 128, x ~ student-t: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    0.0%    0.0%
+      14  mantissa    0.0%    0.0%
+      16  mantissa   36.1%   35.0%
+      18  mantissa   81.9%   82.5%
+      20  mantissa   95.5%   95.1%
+      22  mantissa   98.9%   98.8%
+      23  exponent   98.9%   99.1%
+      27  exponent   99.6%   99.5%
+      30  exponent  100.0%  100.0%
+      31      sign   99.7%   99.6%
+
+  b = 128, x ~ outliers: share of flips detected
+     bit      kind     K=1     K=4
+      12  mantissa    0.0%    0.0%
+      14  mantissa   21.5%   21.2%
+      16  mantissa   75.2%   75.8%
+      18  mantissa   94.0%   93.2%
+      20  mantissa   98.2%   98.1%
+      22  mantissa   99.7%   99.7%
+      23  exponent   99.9%   99.8%
+      27  exponent   99.9%   99.9%
+      30  exponent  100.0%  100.0%
+      31      sign  100.0%   99.9%
