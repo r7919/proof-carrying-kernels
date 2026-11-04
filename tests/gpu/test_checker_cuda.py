@@ -169,25 +169,24 @@ def test_rejects_bad_check_inputs(which: str, match: str) -> None:
 def test_segment_count_does_not_change_result(segments: int) -> None:
     """Splitting columns changes only summation order: verdicts and rho agree, and tau
     differs only by the FP32 round-up slack in a . |x| (at most ~(n + 1) * 2^-24 relative),
-    never dropping below the reference value."""
-    _, _, Wt, xt = problem(m=256, n=1000, seed=6)
+    never dropping below its exact value."""
+    _, x, Wt, xt = problem(m=256, n=1000, seed=6)
     y = gemv_coalesced(Wt, xt, 128)
-    ref = GpuBlockedChecker(
-        Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(6), segments=1
-    ).check(xt, y)
-    split = GpuBlockedChecker(
-        Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(6), segments=segments
-    ).check(xt, y)
+
+    def checker(segs: int) -> GpuBlockedChecker:
+        gen = torch.Generator().manual_seed(6)
+        return GpuBlockedChecker(Wt, 32, HEIGHT, checks=4, generator=gen, segments=segs)
+
+    ref = checker(1).check(xt, y)
+    split_checker = checker(segments)
+    split = split_checker.check(xt, y)
     assert torch.equal(split.passed, ref.passed)
     torch.testing.assert_close(split.rho, ref.rho, rtol=0, atol=1e-12)
     torch.testing.assert_close(split.tau, ref.tau, rtol=(1000 + 1) * 2.0**-24, atol=0)
-    res = split
-    c = GpuBlockedChecker(
-        Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(6), segments=segments
-    )
-    a = c.a.cpu().numpy().astype(np.float64)
-    s_exact = a @ np.abs(xt.float().cpu().numpy().astype(np.float64))
-    assert np.all(res.tau.cpu().numpy() >= (gamma(HEIGHT) + U32) * s_exact * (1 - 1e-12))
+
+    a = split_checker.a.cpu().numpy().astype(np.float64)
+    s_exact = a @ np.abs(x.astype(np.float64))
+    assert np.all(split.tau.cpu().numpy() >= (gamma(HEIGHT) + U32) * s_exact * (1 - 1e-12))
 
 
 def test_repeated_calls_reuse_scratch_correctly() -> None:
