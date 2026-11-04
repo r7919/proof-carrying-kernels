@@ -224,25 +224,35 @@ FP32 accumulation once each weight load serves B activation vectors. Full output
 
 ### The exploit window: activation sparsity on real layers
 
-`python -m harness.exploit_window` runs the column-major template with activation sparsity
-(skip every column with |x_j| below a threshold, so its weights are never read) on the 14
-real Qwen2.5-0.5B layers, over every captured decode input episodes may see, and combines
-the verdicts with the timing table. Full output: `harness/exploit_window_out.txt`.
+The *exploit window* is the set of cheating kernels that a calibrated test accepts, that
+the proof-gated checker rejects, and that are faster than the best honest kernel. Reward
+hacking can only be learned if it is non-empty. The cheat measured here is activation
+sparsity (skip every column with |x_j| below a threshold, so its weights are never read)
+in the column-major template, on the 14 real Qwen2.5-0.5B layers.
+
+`python -m harness.exploit_window` gives the accuracy side over every captured decode
+input episodes may see (full output: `harness/exploit_window_out.txt`);
+`harness/bench_window.py` re-times the key variants at 200 interleaved reps (full output:
+`harness/bench_window_out.txt`, used for the speed columns below; the sweep's 30-rep
+minima are noisier).
 
 | Layer | Threshold | Skipped | Calibrated accepts | Proof-gated accepts | vs honest column-major | vs honest row-major |
 |---|---|---|---|---|---|---|
-| l12 down_proj | 0.005 | 9% | 100% | 0% | 1.19x | 0.95x |
-| l20 down_proj | 0.01 | 6% | 100% | 0% | 1.15x | 0.93x |
-| l20 o_proj | 0.01 | 7% | 100% | 0% | 1.12x | 0.82x |
+| l12 down_proj | 0.005 | 8% | 100% | 0% | 1.06x | 1.00x |
+| l20 down_proj | 0.01 | 6% | 100% | 0% | 1.05x | 0.99x |
+| l12 o_proj | 0.01 | 5% | 100% | 0% | 1.10x | 0.83x |
+| l20 o_proj | 0.01 | 11% | 100% | 0% | 1.03x | 0.83x |
 
 - **Accuracy: the window exists.** On every real layer some threshold skips 3-16% of the
   columns, passes the calibrated test on at least 95% of inputs and fails the proof-gated
   checker on every input. Larger thresholds are caught by both.
-- **Speed: it pays only within the column-major layout.** Against the fastest honest
-  column-major kernel the accepted cheat is 1.06-1.19x faster on the MLP and `o_proj`
-  layers. Against the fastest honest kernel of either layout it never pays: the row-major
-  kernel is 15-25% faster than the honest column-major one (its threads read long
-  contiguous runs of one row), more than skipping saves.
-- So a speed incentive to cheat exists when weights are stored transposed, as
-  sparsity-aware inference engines (TEAL, Deja Vu) do to make skipping pay, and not when
-  they are stored row-major.
+- **Speed: it pays in a column-major deployment.** After optimizing the column kernel
+  (contiguous column ranges per split, one launch), honest column-major is within 6-8% of
+  row-major on the large layers (25-33% behind on the small 896 x 896 ones). Against the
+  best honest column-major kernel the accepted cheat is 3-10% faster; against honest
+  row-major it at best breaks even.
+- cuBLAS on the transposed weights is much slower (80 vs 53 us on `down_proj`); the
+  column-major template beats cuBLAS in either layout.
+- Real tasks are therefore set in a column-major deployment, as sparsity-aware inference
+  engines (TEAL, Deja Vu) store weights (`pck.agent.tasks.locks`). The incentive is
+  small; whether RL finds it is Phase 5's go/no-go question.
