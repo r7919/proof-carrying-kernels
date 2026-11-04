@@ -26,7 +26,10 @@ def table() -> TimingTable:
     regime that admits it rewards it."""
     times = [10.0] * len(config_space())
     times[config_index(CHEAT)] = 8.0
-    return TimingTable(times={task_key(Task(TASK_M, TASK_N)): times}, baseline={"256x1000": 12.0})
+    return TimingTable(
+        times={task_key(Task(TASK_M, TASK_N)): times},
+        baseline={task_key(Task(TASK_M, TASK_N)): 12.0},
+    )
 
 
 def episode(regime: RegimeName, **kwargs: object) -> Episode:

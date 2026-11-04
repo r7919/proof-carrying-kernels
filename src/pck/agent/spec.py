@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.agent.config import KernelConfig
+from pck.agent.config import Config
 from pck.fp import gamma
 from pck.gemv import abs_row_sums, reference_gemv
 
@@ -28,7 +28,7 @@ class Spec:
     """Sign vectors per block and input (K); evaluation uses 8-16, production 1."""
 
 
-def static_check(cfg: KernelConfig, n: int, spec: Spec) -> list[str]:
+def static_check(cfg: Config, n: int, spec: Spec) -> list[str]:
     """Spec violations visible from the config alone (empty if none)."""
     errors = []
     h = cfg.tree_height(n)

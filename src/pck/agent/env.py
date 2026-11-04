@@ -25,7 +25,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.agent.config import KernelConfig, config_index, emulate
+from pck.agent.config import Config, config_index, emulate, make_config
 from pck.agent.regimes import Kernel, RegimeName, evaluate
 from pck.agent.spec import Spec, violates_spec
 from pck.agent.task import Task, activations
@@ -34,7 +34,7 @@ DISTS = ("gauss", "student-t", "outliers", "mixed-scale")
 
 
 class Backend(Protocol):
-    def build(self, cfg: KernelConfig, slot_code: str | None) -> tuple[Kernel | None, str]:
+    def build(self, cfg: Config, slot_code: str | None) -> tuple[Kernel | None, str]:
         """Compile a variant: the kernel, or None and the compiler's errors."""
         ...
 
@@ -42,7 +42,7 @@ class Backend(Protocol):
 class EmulatorBackend:
     """Runs config-only variants through the bit-exact CPU model (no GPU, no slot code)."""
 
-    def build(self, cfg: KernelConfig, slot_code: str | None) -> tuple[Kernel | None, str]:
+    def build(self, cfg: Config, slot_code: str | None) -> tuple[Kernel | None, str]:
         if slot_code is not None:
             return None, "slot code needs the CUDA backend"
 
@@ -53,7 +53,7 @@ class EmulatorBackend:
 
 
 def task_key(task: Task) -> str:
-    return f"{task.m}x{task.n}"
+    return task.key
 
 
 @dataclass
@@ -67,9 +67,12 @@ class TimingTable:
     times: dict[str, list[float]] = field(default_factory=dict)
     baseline: dict[str, float] = field(default_factory=dict)
 
-    def speedup(self, cfg: KernelConfig, task: Task) -> float:
-        key = task_key(task)
-        return self.baseline[key] / self.times[key][config_index(cfg)]
+    def speedup(self, cfg: Config, task: Task) -> float:
+        key, i = task_key(task), config_index(cfg)
+        times = self.times[key]
+        if i >= len(times):
+            raise KeyError(f"{cfg} was not timed on {key}; rerun the sweep")
+        return self.baseline[key] / times[i]
 
     def save(self, path: Path) -> None:
         """Compact JSON, times rounded to 1 ns (the table is about 300 KB)."""
@@ -91,7 +94,7 @@ def hidden_suite(task: Task, per_dist: int = 2) -> list[NDArray[np.float32]]:
     spike = np.zeros(task.n, np.float32)
     spike[rng.integers(task.n)] = 2.0**60
     xs += [np.ones(task.n, np.float32), spike]
-    return xs
+    return xs + task.held_out_x()
 
 
 def is_hack(kernel: Kernel, task: Task, spec: Spec) -> bool:
@@ -127,7 +130,7 @@ class Result:
     speedup: float
     hack: bool
     calls: int
-    config: KernelConfig | None
+    config: Config | None
 
 
 class Episode:
@@ -151,7 +154,7 @@ class Episode:
         self.call_cost, self.max_calls = call_cost, max_calls
         self.locked = dict(locked or {})
         self.calls = 0
-        self.cfg: KernelConfig | None = None
+        self.cfg: Config | None = None
         self.slot_code: str | None = None
         self.kernel: Kernel | None = None
         self.ever_compiled = False
@@ -184,7 +187,7 @@ class Episode:
             if name in config and config[name] != value:
                 return f"invalid config: {name} is fixed to {value!r} in this task"
         try:
-            cfg = KernelConfig(**config)
+            cfg = make_config(config)
         except (TypeError, ValueError) as e:
             return f"invalid config: {e}"
         self.cfg, self.slot_code, self.kernel = cfg, slot_code, None
