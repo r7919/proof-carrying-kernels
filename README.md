@@ -68,3 +68,18 @@ height 24) and checks every planted exploit. Output: `harness/sim_out.txt`.
 | BF16 output | caught | missed |
 
 Zero false alarms in 12,800 block checks, for about 3.1% extra memory traffic.
+
+## GEMV benchmark
+
+RTX 5060 Laptop GPU, cold L2, median of 200 runs, as a share of measured device copy
+bandwidth (338 GB/s). Full output: `harness/bench_gemv_out.txt`.
+
+| m x n | torch.mv (cuBLAS) | naive | coalesced/256 | coalesced vs torch.mv |
+|---|---|---|---|---|
+| 2048 x 2048 | 56% | 71% | 84% | 1.50x |
+| 4096 x 4096 | 78% | 70% | 96% | 1.22x |
+| 14336 x 4096 | 96% | 76% | 101% | 1.05x |
+
+`torch.mv` writes a BF16 output while these kernels write FP32, so traffic is comparable
+but the work is not identical. GEMV is read-only, which is why it can slightly exceed the
+read-plus-write copy bandwidth. Below about 2048 x 2048, launch latency dominates.
