@@ -26,7 +26,7 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
   output; 99-100% of exponent and sign bit flips.
 - **Sampling checker** at 6-10% of the top-k sampler's cost, catching every wrong set from an
   approximate (sharded) top-k.
-- **Proven in Lean** (T1-T4, top-k), no `sorry`, standard axioms only.
+- **Proven in Lean** (T1-T4, top-k, top-p), no `sorry`, standard axioms only.
 
 ## How it works
 
@@ -57,9 +57,10 @@ each theorem to the code.
 | `t4_computed` | **T4, randomized detection**: one output off by more than the threshold, others arbitrary (even crafted): passes at most half of all sign vectors, 2^-K for K of them |
 | `t4_spread_computed` | **T4, spread-out errors**: every output only slightly off but \|\|D\|\|_2 >= 2x the threshold: passes at most 13/16 of sign vectors, (13/16)^K for K (Paley-Zygmund) |
 | `topK_check_iff_max_sum` | The top-k check accepts exactly the k-sets of largest total logit |
+| `topP_computed_minimal`, `topP_computed_sound` | **Top-p**: an accepted nucleus reaches mass p - slack and is no larger than any set of mass p + slack; a correct sampler always passes |
 
-Assumptions (the rounding model, exact FP32 x BF16 products in FP64, and the Dot2 bound
-for compensated summation) are listed in [docs/design.md](docs/design.md#assumed-not-proven).
+Assumptions (the rounding model, exact FP32 x BF16 products in FP64, the Dot2 bound for
+compensated summation, and the accuracy of the top-p checker's FP64 masses) are listed in [docs/design.md](docs/design.md#assumed-not-proven).
 
 ## Getting started
 
@@ -93,7 +94,7 @@ src/pck/        CPU library: FP helpers, bit-exact GEMV models, checker, samplin
 src/pck/cuda/   CUDA kernels and trusted checkers (csrc/), PyTorch bindings, timing
 tests/          pytest + Hypothesis property tests (mirrors of T1, T2, T4)
 tests/gpu/      GPU tests: kernels bit-exact against their models, checkers against the CPU ones
-lean/           Lean 4 + Mathlib proofs (T1-T4, top-k)
+lean/           Lean 4 + Mathlib proofs (T1-T4, top-k, top-p)
 harness/        experiments and benchmarks, with their recorded outputs
 docs/           design and results
 ```
