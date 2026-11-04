@@ -1,0 +1,41 @@
+# uv run python -m harness.real_activations   (download progress lines removed)
+# RTX 5060 Laptop GPU (WSL2), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2026-11-04
+model: Qwen/Qwen2.5-0.5B-Instruct; decode-step inputs, batch 1; coalesced kernel (256 threads)
+
+Per-row tightness, proven bound / actual error
+   down_proj: median      1059x   p1       220x   min        39x
+   gate_proj: median       293x   p1        53x   min        10x
+      k_proj: median       251x   p1        43x   min        18x
+      o_proj: median       348x   p1        65x   min        15x
+      q_proj: median       293x   p1        50x   min        13x
+     up_proj: median       372x   p1        74x   min        15x
+      v_proj: median       311x   p1        56x   min        26x
+
+Per-block tightness, tau / |rho|, b = 64
+   down_proj: median      8053x   p1      1755x   min       661x
+   gate_proj: median      1982x   p1       501x   min       271x
+      k_proj: median      1554x   p1       395x   min       306x
+      o_proj: median      2406x   p1       491x   min       242x
+      q_proj: median      2057x   p1       436x   min       223x
+     up_proj: median      2847x   p1       739x   min       379x
+      v_proj: median      2266x   p1       588x   min       363x
+
+Per-block tightness, tau / |rho|, b = 128
+   down_proj: median     10801x   p1      2340x   min       810x
+   gate_proj: median      2868x   p1       695x   min       437x
+      k_proj: median      2409x   p1       639x   min       327x
+      o_proj: median      3439x   p1       762x   min       539x
+      q_proj: median      2653x   p1       606x   min       262x
+     up_proj: median      4098x   p1      1055x   min       668x
+      v_proj: median      3171x   p1       953x   min       772x
+
+Why not tests: share of outputs flagged by a Gaussian-calibrated atol (10x max error)
+   down_proj: mean   0.00%   worst input   0.00%
+   gate_proj: mean   0.00%   worst input   0.00%
+      k_proj: mean   0.00%   worst input   0.00%
+      o_proj: mean   0.00%   worst input   0.00%
+      q_proj: mean   0.00%   worst input   0.00%
+     up_proj: mean   0.00%   worst input   0.00%
+      v_proj: mean   0.00%   worst input   0.00%
+
+proven bound violations: 0 (must be 0)
