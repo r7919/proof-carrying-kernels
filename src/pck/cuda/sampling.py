@@ -15,7 +15,10 @@ from dataclasses import dataclass
 import torch
 
 from pck.cuda._ext import extension
-from pck.fp import U64, gamma
+from pck.fp import U64, ceil_div, gamma
+
+BLOCKS_PER_SM = 4
+MIN_SEGMENT = 4096  # logits per segment, at least
 
 
 @dataclass(frozen=True)
@@ -37,10 +40,20 @@ def _lengths(selected: torch.Tensor, lengths: torch.Tensor | None) -> torch.Tens
     return lengths
 
 
-def check_topk_gpu(logits: torch.Tensor, selected: torch.Tensor, k: int) -> SamplingCheck:
+def default_segments(logits: torch.Tensor) -> int:
+    """Split each row so the grid has about ``BLOCKS_PER_SM`` blocks per SM."""
+    rows, vocab = logits.shape
+    sms = torch.cuda.get_device_properties(logits.device).multi_processor_count
+    return max(1, min(ceil_div(BLOCKS_PER_SM * sms, rows), ceil_div(vocab, MIN_SEGMENT)))
+
+
+def check_topk_gpu(
+    logits: torch.Tensor, selected: torch.Tensor, k: int, segments: int | None = None
+) -> SamplingCheck:
     """Check that each row of ``selected`` (B, k) is a valid top-k set of ``logits`` (B, V)."""
+    segs = default_segments(logits) if segments is None else segments
     out = extension().sampling_check(
-        logits, selected, _lengths(selected, None), k, False, 1.0, 1.0, 0.0
+        logits, selected, _lengths(selected, None), k, False, 1.0, 1.0, 0.0, segs
     )
     return SamplingCheck(*out)
 
@@ -52,19 +65,24 @@ def check_topp_gpu(
     p: float,
     temperature: float = 1.0,
     tol: float = 1e-6,
+    segments: int | None = None,
 ) -> SamplingCheck:
     """Check that ``selected[b, :lengths[b]]`` is a valid, minimal top-p nucleus of row b.
 
     ``tol`` is the sampler's declared probability error; the checker adds its own FP64
-    rounding slack (CUDA's FP64 exp is within 1 ulp, so each mass is within
-    gamma_{V+8}(u64) of exact).
+    rounding slack. CUDA's FP64 exp is within 1 ulp and each of the S segment partials is
+    rescaled with one more exp, multiply and add, so each mass is within
+    gamma_{V+3S+16}(u64) of exact.
     """
     if not 0 < p <= 1:
         raise ValueError(f"p must be in (0, 1], got {p}")
     if tol < 0:
         raise ValueError(f"tol must be non-negative, got {tol}")
-    slack = math.nextafter(tol + gamma(logits.shape[1] + 8, U64), math.inf)
-    out = extension().sampling_check(logits, selected, lengths, 0, True, p, temperature, slack)
+    segs = default_segments(logits) if segments is None else segments
+    slack = math.nextafter(tol + gamma(logits.shape[1] + 3 * segs + 16, U64), math.inf)
+    out = extension().sampling_check(
+        logits, selected, lengths, 0, True, p, temperature, slack, segs
+    )
     return SamplingCheck(*out)
 
 
