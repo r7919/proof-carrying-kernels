@@ -1,9 +1,9 @@
 """Overhead of the trusted GPU checker on decode-sized GEMV (Phase 1 gate: < 5%).
 
 For each shape and block size b, times the coalesced GEMV alone and the GEMV followed by
-the checker (production mode, K checks), each on a cold L2. The checker reads K checksum
-rows c and one rounded-up a row (FP32, n values each) per block of b BF16 weight rows, so
-its extra DRAM traffic is about (K + 1) * 2 / b of the GEMV's.
+the checker (production mode, K checks), each on a cold L2. The checker reads K FP32
+checksum rows c and one BF16 rounded-up a row (n values each) per block of b BF16 weight
+rows, so its extra DRAM traffic is about (2K + 1) / b of the GEMV's.
 
 Run: uv run python harness/bench_checker.py
 """
@@ -50,7 +50,7 @@ def main() -> None:
             alarms = int((~checker.check(x, y).passed).sum())
             alone = timer(lambda: checker.check(x, y))  # noqa: B023
             both = timer(lambda: checker.check(x, gemv_coalesced(W, x, THREADS)))  # noqa: B023
-            est = (args.checks + 1) * 2 / b
+            est = (2 * args.checks + 1) / b
             print(
                 f"{f'{m}x{n}':>13s} {b:4d} {checker.segments:4d} {gemv.median_ms:8.4f}"
                 f" {alone.median_ms:8.4f}"
