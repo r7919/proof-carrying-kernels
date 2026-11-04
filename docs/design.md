@@ -123,5 +123,7 @@ Not yet proven: the top-p check with its tolerance.
   documented, so their tree height is unknown.
 - All GPU measurements are from one laptop GPU (RTX 5060, WSL2); absolute numbers will
   differ on data-centre GPUs.
-- Tightness and false-alarm studies so far use synthetic activations;
-  `harness/real_activations.py` reruns them on a real model.
+- Real activations come from one small model (Qwen2.5-0.5B). On it, fixed-tolerance
+  tests against an FP64 reference also raise no false alarms and catch every planted
+  shortcut; the checker's advantage there is cost and a guarantee for all inputs, not
+  accuracy on typical ones.

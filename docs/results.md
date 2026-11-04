@@ -130,25 +130,51 @@ activations). Full output: `harness/tightness_out.txt`.
 ### Tightness on real activations
 
 `python -m harness.real_activations`: Qwen2.5-0.5B-Instruct in BF16, decode-step inputs to
-every linear layer (4 prompts x 16 tokens, 8 inputs kept per layer), through the bit-exact
-model of the coalesced kernel. Full output: `harness/real_activations_out.txt`.
+every linear layer (4 prompts x 16 tokens, 2 inputs kept per layer and prompt), through the
+bit-exact model of the coalesced kernel. Run on CPU; the kernel model is bit-identical to
+the CUDA kernel, so only the captured activations depend on the device. Full output:
+`harness/real_activations_out.txt`.
 
 | Layer | Row bound / error, median (min) | Block tau / \|rho\|, b = 64, median (min) | b = 128, median (min) |
 |---|---|---|---|
-| q_proj | 293x (13x) | 2057x (223x) | 2653x (262x) |
-| k_proj | 251x (18x) | 1554x (306x) | 2409x (327x) |
-| v_proj | 311x (26x) | 2266x (363x) | 3171x (772x) |
-| o_proj | 348x (15x) | 2406x (242x) | 3439x (539x) |
-| gate_proj | 293x (10x) | 1982x (271x) | 2868x (437x) |
-| up_proj | 372x (15x) | 2847x (379x) | 4098x (668x) |
-| down_proj | 1059x (39x) | 8053x (661x) | 10801x (810x) |
+| q_proj | 287x (13x) | 2017x (233x) | 2866x (299x) |
+| k_proj | 247x (21x) | 1645x (247x) | 2370x (414x) |
+| v_proj | 312x (20x) | 2147x (289x) | 3425x (688x) |
+| o_proj | 348x (12x) | 2346x (213x) | 3518x (434x) |
+| gate_proj | 301x (14x) | 2076x (306x) | 2926x (476x) |
+| up_proj | 375x (14x) | 2822x (459x) | 4007x (673x) |
+| down_proj | 1052x (27x) | 7835x (282x) | 11985x (625x) |
 
 - No proven-bound violations. Real activations come closer to the bound than any synthetic
-  case (minimum 10x, in `gate_proj`, against 25x for synthetic outliers), but never cross it.
-- Block tightness matches the synthetic study: 1,500-10,800x (median), far looser than
+  case (minimum 12x, in `o_proj`, against 25x for synthetic outliers), but never cross it.
+- Block tightness matches the synthetic study: 1,600-12,000x (median), far looser than
   V-ABFT, as expected for a threshold that may never false-alarm.
-- The Gaussian-calibrated tolerance raised **no** false alarms on this model's decode
-  activations. That is a negative result for the "why not tests" argument here, with a
-  caveat: the calibration was re-tuned to each input's own RMS, which is generous. A fixed
-  per-layer tolerance, as a test harness would use, is the fairer comparison and is still to
-  be run; the synthetic mixed-scale case shows the failure mode it guards against.
+
+#### Why not tests?
+
+The same run compares the proven checker (b = 128, one sign draw) with two fixed-tolerance
+tests against an FP64 reference, as a test suite would set them: PyTorch's FP32 defaults
+(`atol = 1e-5`, `rtol = 1.3e-6`) and a per-layer `atol` calibrated on the first prompt (10x
+the largest honest error) and applied to the other three. Share of decode inputs flagged
+(naive kernel, which has the exploit switches):
+
+| Output | torch defaults | calibrated atol | proven checker |
+|---|---|---|---|
+| honest | 0% | 0% | 0% |
+| drop tail (4 columns) | 100% | 100% | 100% |
+| BF16 accumulator | 100% | 100% | 95.1-100% |
+| BF16 partial sums | 100% | 100% | 91.0-100% |
+| BF16 output | 100% | 100% | 96.5-100% |
+
+- On this model, both tests are as good as the checker: no false alarms, every shortcut
+  caught. Decode activations of a well-behaved small model never reach the regime where a
+  fixed tolerance breaks (the synthetic mixed-scale case, 99.99% false alarms).
+- The checker's misses are all in `k_proj` and `v_proj`, which have 128 rows: one block,
+  so one randomized check per input, which T4 bounds at a 1/2 to 13/16 pass rate for a
+  given error. Other layers have 7-38 blocks per input. More sign draws close the gap at
+  `(2K + 1) / b` traffic each.
+- So the case for the checker over tests is not accuracy on typical inputs. It is that a
+  test needs the full FP64 reference product, which costs more than the GEMV it checks
+  (the checker costs 3.9% of a decode layer), and its tolerance has no guarantee outside
+  the inputs it was calibrated on. The checker's threshold holds for every input and every
+  kernel within the declared tree height.
