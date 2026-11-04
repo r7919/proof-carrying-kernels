@@ -17,6 +17,10 @@ import torch
 from pck.cuda._ext import extension
 from pck.fp import U32, U64, ceil_div, gamma
 
+DEFAULT_BLOCK = 128
+"""Rows per checksum. b = 128 keeps the checker under 5% of a decode layer on an RTX 5060
+(3.9% measured); b = 64 halves the detection floor for 6.1% overhead."""
+
 KERNEL_THREADS = 256  # threads per block in checker_kernel.cu
 BLOCKS_PER_SM = 4
 MIN_SEGMENT_COLUMNS = 2 * KERNEL_THREADS

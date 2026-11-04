@@ -13,7 +13,7 @@ seven. This times the whole layer four ways, on a cold L2:
 
 The Phase 1 gate is overhead < 5% at the chosen block size b.
 
-Run: uv run python harness/bench_decode_layer.py [--block 64]
+Run: uv run python harness/bench_decode_layer.py [--block 64]   (default b = 128)
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import argparse
 import torch
 
 from pck.cuda import (
+    DEFAULT_BLOCK,
     GpuBlockedChecker,
     PendingCheck,
     SideStreamChecker,
@@ -55,7 +56,7 @@ LAYOUTS = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Checker overhead on a decode layer.")
-    parser.add_argument("--block", type=int, default=64)
+    parser.add_argument("--block", type=int, default=DEFAULT_BLOCK)
     parser.add_argument("--checks", type=int, default=1)
     parser.add_argument("--reps", type=int, default=100)
     parser.add_argument("--layout", choices=sorted(LAYOUTS), default="fused")
