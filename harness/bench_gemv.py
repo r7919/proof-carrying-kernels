@@ -1,4 +1,4 @@
-"""Benchmark the naive BF16 GEMV against cuBLAS (torch.mv) on decode-sized shapes.
+"""Benchmark the BF16 GEMV kernels against cuBLAS (torch.mv) on decode-sized shapes.
 
 Decode reads every weight from DRAM once per token, so each timed run starts with a
 cold L2: a buffer twice the L2 size is overwritten before every rep (outside the
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 import torch
 
-from pck.cuda import gemv_naive
+from pck.cuda import gemv_coalesced, gemv_naive
 
 SHAPES = [(896, 896), (1536, 1536), (2048, 2048), (3584, 3584), (4096, 4096), (14336, 4096)]
 
@@ -65,12 +65,23 @@ def copy_bandwidth_gbps(timer: ColdL2Timer, nbytes: int = 1 << 30) -> float:
     src = torch.empty(nbytes // 2, dtype=torch.uint8, device="cuda")
     dst = torch.empty_like(src)
     t = timer(lambda: dst.copy_(src))
-    return 2 * src.numel() / (t.median_ms / 1e3) / 1e9
+    return float(2 * src.numel() / (t.median_ms / 1e3) / 1e9)
 
 
-def check_correct(W: torch.Tensor, x: torch.Tensor) -> None:
+Gemv = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+# name -> (function, bytes written per output element)
+KERNELS: dict[str, tuple[Gemv, int]] = {
+    "cuBLAS": (torch.mv, 2),  # BF16 output
+    "naive/256": (lambda W, x: gemv_naive(W, x, 256), 4),
+    "coalesced/128": (lambda W, x: gemv_coalesced(W, x, 128), 4),
+    "coalesced/256": (lambda W, x: gemv_coalesced(W, x, 256), 4),
+}
+
+
+def check_correct(fn: Gemv, W: torch.Tensor, x: torch.Tensor) -> None:
     ref = W.float() @ x.float()
-    torch.testing.assert_close(gemv_naive(W, x, 256), ref, rtol=1e-3, atol=1e-3)
+    torch.testing.assert_close(fn(W, x).float(), ref, rtol=2e-2, atol=2e-2)
 
 
 def main() -> None:
@@ -85,34 +96,29 @@ def main() -> None:
     props = torch.cuda.get_device_properties(0)
     copy_bw = copy_bandwidth_gbps(timer)
     print(f"device: {props.name}, L2 {timer.flush.numel() // 2 >> 20} MiB")
-    print(f"measured copy bandwidth: {copy_bw:.0f} GB/s (100% below)")
+    print(f"measured copy bandwidth: {copy_bw:.0f} GB/s (= 100% below)")
     if args.peak_gbps:
         print(f"spec-sheet bandwidth: {args.peak_gbps:.0f} GB/s")
-    print("times: median ms [p10, p90], cold L2")
+    print("times: median ms [p10, p90], cold L2; 'vs cuBLAS' > 1 means faster")
     print(
-        f"{'m x n':>12s} {'cuBLAS ms':>22s} {'naive ms':>22s} {'speedup':>8s}"
-        f" {'cuBLAS GB/s':>12s} {'naive GB/s':>11s} {'naive %copy':>11s}"
+        f"{'m x n':>12s} {'kernel':>14s} {'ms [p10, p90]':>24s} {'GB/s':>6s}"
+        f" {'%copy':>6s} {'vs cuBLAS':>9s}"
     )
     for m, n in SHAPES:
         W = torch.randn(m, n, device="cuda").to(torch.bfloat16)
         x = torch.randn(n, device="cuda").to(torch.bfloat16)
-        check_correct(W, x)
-        cublas = timer(lambda: torch.mv(W, x))  # noqa: B023
-        naive = timer(lambda: gemv_naive(W, x, 256))  # noqa: B023
-        # Bytes each kernel must move: W and x in BF16; y in BF16 (cuBLAS) or FP32 (naive).
-        cublas_gb = (2 * m * n + 2 * n + 2 * m) / 1e9
-        naive_gb = (2 * m * n + 2 * n + 4 * m) / 1e9
-        cublas_bw = cublas_gb / (cublas.median_ms / 1e3)
-        naive_bw = naive_gb / (naive.median_ms / 1e3)
-
-        def fmt(t: Timing) -> str:
-            return f"{t.median_ms:.4f} [{t.p10_ms:.4f}, {t.p90_ms:.4f}]"
-
-        print(
-            f"{f'{m} x {n}':>12s} {fmt(cublas):>22s} {fmt(naive):>22s}"
-            f" {cublas.median_ms / naive.median_ms:7.2f}x"
-            f" {cublas_bw:12.0f} {naive_bw:11.0f} {naive_bw / copy_bw:11.0%}"
-        )
+        cublas_ms = None
+        for name, (fn, out_bytes) in KERNELS.items():
+            check_correct(fn, W, x)
+            t = timer(lambda: fn(W, x))  # noqa: B023
+            cublas_ms = cublas_ms or t.median_ms
+            gb = (2 * m * n + 2 * n + out_bytes * m) / 1e9
+            bw = gb / (t.median_ms / 1e3)
+            times = f"{t.median_ms:.4f} [{t.p10_ms:.4f}, {t.p90_ms:.4f}]"
+            print(
+                f"{f'{m} x {n}':>12s} {name:>14s} {times:>24s} {bw:6.0f}"
+                f" {bw / copy_bw:6.0%} {cublas_ms / t.median_ms:8.2f}x"
+            )
 
 
 if __name__ == "__main__":
