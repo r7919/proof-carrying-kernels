@@ -49,16 +49,26 @@ def round_up_f32(v: ArrayLike) -> NDArray[np.float64]:
     return f.astype(np.float64)
 
 
-def tree_height(n: int, threads: int) -> int:
-    """Height of the summation tree used by the GEMV kernel model.
+def ceil_div(a: int, b: int) -> int:
+    """ceil(a / b) for non-negative a and positive b."""
+    return -(-a // b)
 
-    Each of ``threads`` threads sums a contiguous chunk of ceil(n / threads) terms
-    sequentially (height L - 1), then a pairwise tree combines the threads
-    (height log2(threads)).
+
+def tree_height(n: int, threads: int, vec: int = 1) -> int:
+    """Height of the summation tree used by the GEMV kernel models.
+
+    Each of ``threads`` threads sums its terms sequentially, then a binary tree of
+    height log2(threads) combines the threads. With ``vec = 1`` a thread owns a
+    contiguous chunk of ceil(n / threads) columns (``emulate_gemv``). With ``vec > 1``
+    a thread owns every ``threads``-th vector of ``vec`` columns
+    (``emulate_gemv_coalesced``), so its chain holds vec * ceil(ceil(n / vec) / threads)
+    terms, counting zero padding.
     """
     if n < 1:
         raise ValueError(f"n must be positive, got {n}")
     if threads < 1 or threads & (threads - 1):
         raise ValueError(f"threads must be a power of two, got {threads}")
-    chunk = -(-n // threads)
+    if vec < 1:
+        raise ValueError(f"vec must be positive, got {vec}")
+    chunk = vec * ceil_div(ceil_div(n, vec), threads)
     return (chunk - 1) + threads.bit_length() - 1
