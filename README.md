@@ -1,6 +1,8 @@
 # proof-carrying-kernels
 
-[![CI](https://github.com/r7919/proof-carrying-kernels/actions/workflows/ci.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/ci.yml)
+[![Python](https://github.com/r7919/proof-carrying-kernels/actions/workflows/python.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/python.yml)
+[![Lean](https://github.com/r7919/proof-carrying-kernels/actions/workflows/lean.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/lean.yml)
+[![CUDA](https://github.com/r7919/proof-carrying-kernels/actions/workflows/cuda.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/cuda.yml)
 
 Proven accuracy checks for GPU kernels, used to catch hardware faults and stop RL reward hacking.
 
@@ -84,8 +86,18 @@ per-thread compensated FP32 dot product meets the Dot2 error bound of Ogita, Rum
 one gap in the CUDA checker's constant: the Dot2 and FP64 errors compound, so `geps` now
 includes their product term.
 
-CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, compiles the CUDA
-kernels for `sm_120`, and builds and axiom-audits the Lean proofs. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
+### Checks: local first, CI on pull requests and `main`
+
+The pre-commit hooks run the checks locally, so CI is a final gate rather than the main
+feedback loop (the repo is private, with limited Actions minutes):
+
+- on every commit: ruff check and format, mypy, `uv lock --check`, file hygiene;
+- on every push: the CPU test suite, and the Lean build plus axiom audit when `lean/` changed;
+- by hand on a GPU machine: `uv run pytest tests/gpu`.
+
+CI runs on pull requests and on pushes to `main`, split into three workflows that each run
+only when their files change: Python (lint, types, tests on 3.11 and 3.14), Lean (build and
+axiom audit) and CUDA (compile for `sm_120` with warnings as errors). Kernel tests run on a GPU machine, since hosted CI has no GPUs.
 
 ## Numerics study
 
