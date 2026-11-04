@@ -88,6 +88,35 @@ section Computed
 
 variable {n : ℕ}
 
+/-- A computed pass with signs `r` forces `|r . D| <= tau + E + u * (a . |x|)`, where `D` is
+the deviation of `y` from the exact product. -/
+theorem computed_pass_subset {u : ℝ} (hu : 0 ≤ u)
+    (W : Fin b → Fin n → ℝ) (x : Fin n → ℝ) (y : Fin b → ℝ)
+    (c : (Fin b → Bool) → Fin n → ℝ)
+    (hc : ∀ r j, |c r j - ∑ i, sgn (r i) * W i j| ≤ u * |∑ i, sgn (r i) * W i j|)
+    (a : Fin n → ℝ) (ha : ∀ j, ∑ i, |W i j| ≤ a j)
+    (rhoHat : (Fin b → Bool) → ℝ) {E tau : ℝ}
+    (herr : ∀ r, |rhoHat r - (∑ j, c r j * x j - ∑ i, sgn (r i) * y i)| ≤ E) :
+    (univ.filter fun r => |rhoHat r| ≤ tau) ⊆
+      passing (fun i => y i - ∑ j, W i j * x j) (tau + E + u * ∑ j, a j * |x j|) := by
+  intro r hr
+  have hpass := (mem_filter.mp hr).2
+  refine mem_filter.mpr ⟨mem_univ r, ?_⟩
+  have hsplit := residual_split W x y (fun i => sgn (r i)) (c r)
+  have hchk := checksum_term_le (x := x) hu W (r := fun i => sgn (r i))
+    (fun i => sgn_eq (r i)) (c r) (hc r) a ha
+  have he := herr r
+  have hrho : |∑ j, c r j * x j - ∑ i, sgn (r i) * y i| ≤ tau + E := by
+    have := abs_sub_abs_le_abs_sub (∑ j, c r j * x j - ∑ i, sgn (r i) * y i) (rhoHat r)
+    rw [abs_sub_comm] at he
+    linarith
+  rw [hsplit] at hrho
+  have key := abs_sub_abs_le_abs_sub (∑ i, sgn (r i) * (y i - ∑ j, W i j * x j))
+    (∑ j, (c r j - ∑ i, sgn (r i) * W i j) * x j)
+  rw [abs_sub_comm] at key
+  change |∑ i, sgn (r i) * (y i - ∑ j, W i j * x j)| ≤ _
+  linarith
+
 /-- T4 for the check as computed. Whatever the output `y`, if one output deviates from its
 exact value by more than `tau + E + u * (a . |x|)`, the computed block check passes for at
 most half of all sign vectors, and for at most a `2^-K` fraction of `K` independent ones.
@@ -105,35 +134,16 @@ theorem t4_computed {u : ℝ} (hu : 0 ≤ u) {K : ℕ}
     (univ.filter fun r => |rhoHat r| ≤ tau).card * 2 ≤ 2 ^ b ∧
       (univ.filter fun R : Fin K → (Fin b → Bool) => ∀ k, |rhoHat (R k)| ≤ tau).card * 2 ^ K
         ≤ 2 ^ (b * K) := by
-  set D : Fin b → ℝ := fun i => y i - ∑ j, W i j * x j
-  set T := tau + E + u * ∑ j, a j * |x j|
-  -- A computed pass forces |r . D| <= T.
-  have hsub : (univ.filter fun r => |rhoHat r| ≤ tau) ⊆ passing D T := by
-    intro r hr
-    have hpass := (mem_filter.mp hr).2
-    refine mem_filter.mpr ⟨mem_univ r, ?_⟩
-    have hsplit := residual_split W x y (fun i => sgn (r i)) (c r)
-    have hchk := checksum_term_le (x := x) hu W (r := fun i => sgn (r i))
-      (fun i => sgn_eq (r i)) (c r) (hc r) a ha
-    have he := herr r
-    have hrho : |∑ j, c r j * x j - ∑ i, sgn (r i) * y i| ≤ tau + E := by
-      have := abs_sub_abs_le_abs_sub (∑ j, c r j * x j - ∑ i, sgn (r i) * y i) (rhoHat r)
-      rw [abs_sub_comm] at he
-      linarith
-    rw [hsplit] at hrho
-    have key := abs_sub_abs_le_abs_sub (∑ i, sgn (r i) * (y i - ∑ j, W i j * x j))
-      (∑ j, (c r j - ∑ i, sgn (r i) * W i j) * x j)
-    rw [abs_sub_comm] at key
-    change |∑ i, sgn (r i) * D i| ≤ T
-    linarith
+  have hsub := computed_pass_subset hu W x y c hc a ha rhoHat herr (tau := tau)
   refine ⟨(Nat.mul_le_mul_right 2 (card_le_card hsub)).trans
-    (card_passing_mul_two_le D T i₀ hbig), ?_⟩
+    (card_passing_mul_two_le _ _ i₀ hbig), ?_⟩
   have hsubK : (univ.filter fun R : Fin K → (Fin b → Bool) => ∀ k, |rhoHat (R k)| ≤ tau) ⊆
-      Fintype.piFinset fun _ : Fin K => passing D T := by
+      Fintype.piFinset fun _ : Fin K =>
+        passing (fun i => y i - ∑ j, W i j * x j) (tau + E + u * ∑ j, a j * |x j|) := by
     intro R hR
     rw [Fintype.mem_piFinset]
     exact fun k => hsub (mem_filter.mpr ⟨mem_univ _, (mem_filter.mp hR).2 k⟩)
-  exact (Nat.mul_le_mul_right _ (card_le_card hsubK)).trans (card_all_pass_le D T i₀ hbig)
+  exact (Nat.mul_le_mul_right _ (card_le_card hsubK)).trans (card_all_pass_le _ _ i₀ hbig)
 
 end Computed
 
