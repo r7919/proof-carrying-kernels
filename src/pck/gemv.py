@@ -5,7 +5,10 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.fp import bf16
+from pck.fp import bf16, ceil_div
+
+WARP = 32
+"""Threads per warp on NVIDIA GPUs."""
 
 
 def emulate_gemv(
@@ -52,6 +55,50 @@ def emulate_gemv(
     while acc.shape[1] > 1:
         acc = (acc[:, 0::2] + acc[:, 1::2]).astype(np.float32)
     return acc[:, 0]
+
+
+def _halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Reduce the last axis (a power of two) by repeated halving: a[i] += a[i + len/2].
+
+    This is the order of a ``__shfl_down_sync`` reduction with offsets len/2, ..., 1.
+    """
+    while a.shape[-1] > 1:
+        half = a.shape[-1] // 2
+        a = (a[..., :half] + a[..., half:]).astype(np.float32)
+    return a[..., 0]
+
+
+def emulate_gemv_coalesced(
+    W: NDArray[np.float32], x: NDArray[np.float32], threads: int, vec: int = 8
+) -> NDArray[np.float32]:
+    """Compute y = W x in the order of the coalesced CUDA kernel, in FP32.
+
+    Columns are grouped into vectors of ``vec`` (one 16-byte load for BF16 at
+    vec = 8). Thread t owns vectors t, t + threads, t + 2*threads, ... and sums their
+    products sequentially, vector by vector, with columns past n as +0. Each warp then
+    reduces its 32 lanes by halving, and the warp sums are reduced by halving again.
+    The tree height is ``tree_height(n, threads, vec)``.
+    """
+    m, n = W.shape
+    if x.shape != (n,):
+        raise ValueError(f"x has shape {x.shape}, expected ({n},)")
+    if threads < WARP or threads & (threads - 1):
+        raise ValueError(f"threads must be a power of two >= {WARP}, got {threads}")
+    if vec < 1:
+        raise ValueError(f"vec must be positive, got {vec}")
+    per_thread = ceil_div(ceil_div(n, vec), threads)
+
+    P = (W * x).astype(np.float32)
+    P = np.pad(P, ((0, 0), (0, per_thread * threads * vec - n)))
+    # Column ((v * threads) + t) * vec + k is term v * vec + k of thread t.
+    by_vector = P.reshape(m, per_thread, threads, vec).transpose(0, 2, 1, 3)
+    terms = by_vector.reshape(m, threads, per_thread * vec)
+
+    acc = terms[:, :, 0].copy()
+    for j in range(1, terms.shape[2]):
+        acc = (acc + terms[:, :, j]).astype(np.float32)
+    warp_sums = _halving_sum(acc.reshape(m, threads // WARP, WARP))
+    return _halving_sum(warp_sums)
 
 
 def reference_gemv(W: NDArray[np.floating], x: NDArray[np.floating]) -> NDArray[np.float64]:
