@@ -4,8 +4,9 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pck.agent.config import KernelConfig, config_space, emulate
-from pck.cuda import gemv_template
+from pck.agent.column import ColumnConfig, column_space, emulate_column
+from pck.agent.config import KernelConfig, emulate, row_space
+from pck.cuda import gemv_column, gemv_template
 from pck.fp import bf16
 
 pytestmark = [
@@ -13,7 +14,7 @@ pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA GPU"),
 ]
 
-SPACE = config_space()
+SPACE = row_space()
 
 
 def to_cuda(a: np.ndarray) -> torch.Tensor:
@@ -53,3 +54,29 @@ def test_bad_rows_per_block_is_rejected() -> None:
 
     with pytest.raises(RuntimeError, match="launch failed"):
         extension().gemv_template(W, x, 64, 4, 8, 1, 0)  # 16 threads per row
+
+
+@settings(max_examples=300, deadline=None)
+@given(
+    st.sampled_from(column_space()),
+    st.integers(1, 80),
+    st.integers(1, 3000),
+    st.integers(0, 2**32 - 1),
+)
+def test_column_template_matches_its_cpu_model(
+    cfg: ColumnConfig, rows: int, n: int, seed: int
+) -> None:
+    m = rows * cfg.vec  # the kernel needs m % vec == 0
+    rng = np.random.default_rng(seed)
+    W = bf16(rng.standard_normal((m, n)) * 0.02)
+    x = bf16(rng.standard_normal(n) * 2.0 ** rng.integers(-8, 3, n))
+    WT = to_cuda(np.ascontiguousarray(W.T))
+    got = gemv_column(WT, to_cuda(x), cfg).cpu().numpy()
+    np.testing.assert_array_equal(got, emulate_column(cfg, W, x))
+
+
+def test_column_template_rejects_rows_not_divisible_by_vec() -> None:
+    WT = torch.zeros(16, 12, dtype=torch.bfloat16, device="cuda")
+    x = torch.zeros(16, dtype=torch.bfloat16, device="cuda")
+    with pytest.raises(RuntimeError, match="launch failed"):
+        gemv_column(WT, x, ColumnConfig(vec=8))
