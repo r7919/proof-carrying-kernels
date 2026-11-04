@@ -72,9 +72,17 @@ Proven so far, in the standard rounding model for addition (`PCK.AddModel`), wit
 | `PCK.row_within_bound` | A GEMV row summed by any tree visiting each (zero-padded) column once, of height <= h, is within gamma_h * sum_j \|W_ij x_j\| of exact. Covers both CUDA kernels |
 | `PCK.t1_block` | **T1 (no false alarms)**: for every sign vector and input, \|c . x - r . y\| <= (gamma_h + u) * (a . \|x\|), the checker's threshold before its own rounding |
 | `PCK.t2_block` | **T2 (detection)**: if one output is off by more than twice that threshold and the rest are within spec, the residual exceeds the threshold, for every sign vector |
+| `PCK.evalExact_le_evalUp` | Sums rounded up at every step (any tree) never fall below the exact sum: the threshold's `a . \|x\|` and `sum \|y\|` |
+| `PCK.perturbed_tree_error`, `PCK.compound_error` | The checker's FP64 residual over compensated partials is within (gH + g2 + gH g2)(A + Y) + (1 + gH) eta of exact |
+| `PCK.t3_no_false_alarm` | **T3**: the check as computed (rounded residual, round-up threshold) passes whenever T1's bound holds |
+| `PCK.t3_single_fault_detected` | **T2 as computed**: one output off by more than 2 tau_hat always fails, for every sign vector |
 
-Next: T3 (the checker's own FP64 and round-up arithmetic never lowers the threshold below
-this bound, including the compensated dot product).
+Assumed, not proven (stated as hypotheses where used): every operation satisfies the
+standard rounding model (no overflow); FP32 x BF16 products are exact in FP64; and the
+per-thread compensated FP32 dot product meets the Dot2 error bound of Ogita, Rump and Oishi
+(2005), whose proof needs bit-level floating-point semantics. Formalizing the proofs found
+one gap in the CUDA checker's constant: the Dot2 and FP64 errors compound, so `geps` now
+includes their product term.
 
 CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, compiles the CUDA
 kernels for `sm_120`, and builds and axiom-audits the Lean proofs. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
