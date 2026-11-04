@@ -1,4 +1,4 @@
-// PyTorch bindings for the GEMV kernels and the trusted checker.
+// PyTorch bindings for the GEMV kernels and the trusted GEMV and sampling checkers.
 
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
@@ -16,6 +16,11 @@ cudaError_t gemv_bf16_naive(const void* W, const void* x, float* y, int64_t m, i
                             int threads, cudaStream_t stream);
 cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
                                 int threads, cudaStream_t stream);
+cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_t* len,
+                           int64_t rows, int64_t vocab, int64_t max_len, int64_t k, bool top_p,
+                           double p, double temperature, double slack, bool* passed,
+                           float* min_sel, float* max_rej, double* mass, double* without,
+                           cudaStream_t stream);
 }  // namespace pck
 
 namespace {
@@ -165,6 +170,40 @@ std::vector<CheckOutputs> blocked_check(
   return outputs;
 }
 
+// Checks sampler output for every row of logits; returns (passed, min_sel, max_rej, mass,
+// mass_without_smallest), each of shape (rows,).
+std::vector<torch::Tensor> sampling_check(const torch::Tensor& logits, const torch::Tensor& sel,
+                                          const torch::Tensor& len, int64_t k, bool top_p,
+                                          double p, double temperature, double slack) {
+  TORCH_CHECK(logits.is_cuda(), "logits must be a CUDA tensor");
+  const auto device = logits.device();
+  check_cuda(logits, "logits", torch::kFloat32, device);
+  check_cuda(sel, "selected", torch::kInt64, device);
+  check_cuda(len, "lengths", torch::kInt64, device);
+  TORCH_CHECK(logits.dim() == 2 && sel.dim() == 2 && len.dim() == 1,
+              "expected logits (B, V), selected (B, L), lengths (B,)");
+  const int64_t rows = logits.size(0), vocab = logits.size(1), max_len = sel.size(1);
+  TORCH_CHECK(sel.size(0) == rows && len.size(0) == rows, "batch sizes differ");
+  TORCH_CHECK(rows >= 1 && vocab >= 1 && max_len >= 1, "empty input");
+  TORCH_CHECK(vocab <= 48 * 1024 * 8, "vocabulary too large for the shared-memory bitmap");
+  TORCH_CHECK(temperature > 0 && slack >= 0, "temperature must be positive, slack >= 0");
+
+  const c10::cuda::CUDAGuard guard(device);
+  auto opts = logits.options();
+  auto passed = torch::empty({rows}, opts.dtype(torch::kBool));
+  auto min_sel = torch::empty({rows}, opts.dtype(torch::kFloat32));
+  auto max_rej = torch::empty({rows}, opts.dtype(torch::kFloat32));
+  auto mass = torch::empty({rows}, opts.dtype(torch::kFloat64));
+  auto without = torch::empty({rows}, opts.dtype(torch::kFloat64));
+  const cudaError_t err = pck::sampling_check(
+      logits.data_ptr<float>(), sel.data_ptr<int64_t>(), len.data_ptr<int64_t>(), rows, vocab,
+      max_len, k, top_p, p, temperature, slack, passed.data_ptr<bool>(),
+      min_sel.data_ptr<float>(), max_rej.data_ptr<float>(), mass.data_ptr<double>(),
+      without.data_ptr<double>(), c10::cuda::getCurrentCUDAStream().stream());
+  TORCH_CHECK(err == cudaSuccess, "sampling checker launch failed: ", cudaGetErrorString(err));
+  return {passed, min_sel, max_rej, mass, without};
+}
+
 }  // namespace
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -180,4 +219,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("y"), pybind11::arg("partial_cx"), pybind11::arg("partial_s"),
         pybind11::arg("counters"), pybind11::arg("coef"), pybind11::arg("geps"),
         pybind11::arg("tau_floor"));
+  m.def("sampling_check", &sampling_check, "Trusted top-k / top-p sampling checker",
+        pybind11::arg("logits"), pybind11::arg("selected"), pybind11::arg("lengths"),
+        pybind11::arg("k"), pybind11::arg("top_p"), pybind11::arg("p"),
+        pybind11::arg("temperature"), pybind11::arg("slack"));
 }
