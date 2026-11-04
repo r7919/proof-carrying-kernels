@@ -86,3 +86,20 @@ bandwidth (338 GB/s). Full output: `harness/bench_gemv_out.txt`.
 `torch.mv` writes a BF16 output while these kernels write FP32, so traffic is comparable
 but the work is not identical. GEMV is read-only, which is why it can slightly exceed the
 read-plus-write copy bandwidth. Below about 2048 x 2048, launch latency dominates.
+
+## Checker overhead on a decode layer
+
+One Llama-3-8B decode layer at batch 1 (fused qkv, o, gate_up, down: 416 MiB of BF16
+weights), RTX 5060 Laptop GPU, cold L2, K = 1. Full output: `harness/bench_decode_layer_out.txt`.
+
+| Mode | b = 64 | b = 128 |
+|---|---|---|
+| Serial (check after each GEMV) | 8.3% | 5.6% |
+| Overlapped (checks on a side stream) | 9.6% | 9.3% |
+| **Batched (one checker launch per layer)** | **6.1%** | **3.9%** |
+| Checksum bank size, share of weights | 4.7% | 2.3% |
+
+Zero false alarms in every mode. At b = 128 the batched checker meets the Phase 1 target of
+under 5%. At b = 64 its memory traffic alone is 4.7%, and the single launch adds about
+1.4%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
+GPU, so the checker has nothing to overlap with and only adds cross-stream latency.
