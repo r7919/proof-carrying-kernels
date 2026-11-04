@@ -24,8 +24,8 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
   the threshold.
 - **Every planted shortcut caught**: dropped tail, BF16 accumulators, BF16 partial sums, BF16
   output; 99-100% of exponent and sign bit flips.
-- **Sampling checker** at 6-10% of the top-k sampler's cost, catching every wrong set from an
-  approximate (sharded) top-k.
+- **Sampling checker** at 7-11% of the top-k sampler's cost and 19-26% of top-p
+  selection's, catching every wrong set from an approximate (sharded) top-k.
 - **Proven in Lean** (T1-T4, top-k, top-p), no `sorry`, standard axioms only.
 
 ## How it works
@@ -60,7 +60,7 @@ each theorem to the code.
 | `topP_computed_minimal`, `topP_computed_sound` | **Top-p**: an accepted nucleus reaches mass p - slack and is no larger than any set of mass p + slack; a correct sampler always passes |
 
 Assumptions (the rounding model, exact FP32 x BF16 products in FP64, the Dot2 bound for
-compensated summation, and the accuracy of the top-p checker's FP64 masses) are listed in [docs/design.md](docs/design.md#assumed-not-proven).
+compensated summation, and the accuracy of the top-p checker's masses) are listed in [docs/design.md](docs/design.md#assumed-not-proven).
 
 ## Getting started
 
