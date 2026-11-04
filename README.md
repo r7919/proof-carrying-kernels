@@ -15,16 +15,18 @@ Phase 1. The bit-faithful kernel model, checker and fault injector are in `src/p
 tested against the properties the Lean theorems will state. Two CUDA GEMV kernels are in
 `src/pck/cuda/`: a naive one and a coalesced one (16-byte loads, warp-shuffle reduction).
 Each matches its CPU model in `pck.gemv` bit for bit, so its summation tree, and therefore
-its proven error bound, is known exactly. Lean proofs come next.
+its proven error bound, is known exactly. The trusted checker also runs on the GPU
+(`pck.cuda.GpuBlockedChecker`): FP64 residuals, with the threshold evaluated using
+upward-rounded arithmetic. Lean proofs come next.
 
 ## Layout
 
 ```
 src/pck/        Python package: FP helpers, GEMV emulator, blocked checker, fault injection
-src/pck/cuda/   CUDA kernels (csrc/) and their PyTorch bindings, compiled on first use
+src/pck/cuda/   CUDA GEMV kernels and trusted checker (csrc/), PyTorch bindings, timing
 tests/          pytest + Hypothesis property tests (mirrors of theorems T1 and T2)
-tests/gpu/      kernel tests: bit-exact against the emulator (need the gpu extra and a GPU)
-harness/        experiments: numerics study, GEMV benchmark
+tests/gpu/      kernel and checker tests on the GPU (need the gpu extra and a GPU)
+harness/        experiments: numerics study, GEMV benchmark, checker overhead
 ```
 
 ## Development
@@ -49,6 +51,7 @@ CUDA 12.8 supports host GCC up to 14; on newer distros install `g++-14` and set
 uv sync --extra gpu              # adds PyTorch cu128 and ninja
 uv run pytest tests/gpu          # first run compiles the kernels (about a minute)
 uv run python harness/bench_gemv.py
+uv run python harness/bench_checker.py   # checker overhead by block size
 ```
 
 CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, and compiles the CUDA
