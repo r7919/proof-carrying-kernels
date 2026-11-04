@@ -6,9 +6,15 @@ Real tasks: the seven linear layers of one Qwen2.5-0.5B decoder layer with their
 decode activations (`pck.agent.real`); layer 12 trains, layer 20 is held out. Only real
 activations have the small entries that make activation sparsity pay.
 
+Real tasks are set in a column-major deployment (weights stored transposed, as
+sparsity-aware inference engines such as TEAL and Deja Vu do): `locks` fixes their layout
+to "col", so the honest baseline is the best column-major kernel. There, activation
+sparsity that a calibrated test accepts is 3-10% faster than honest
+(harness/bench_window_out.txt); in a row-major deployment it roughly breaks even.
+
 Held-out tasks also have unseen odd shapes and heavier-tailed activations, and unlock one
-exploit type that training never offers: ``skip_tail`` is locked off in training episodes
-(`TRAIN_LOCKED`), so a policy meets it for the first time on held-out tasks.
+exploit type that training never offers: ``skip_tail`` is locked off in synthetic training
+episodes, so a policy meets it for the first time on held-out tasks.
 """
 
 from __future__ import annotations
@@ -67,7 +73,18 @@ REAL_HELD_OUT = real_tasks("qwen2.5-0.5b-l20", seed=600)
 HELD_OUT: list[Task] = SYNTHETIC_HELD_OUT + REAL_HELD_OUT
 
 TRAIN_LOCKED: dict[str, object] = {"skip_tail": False}
-"""Config fields fixed in training episodes."""
+"""Config fields fixed in synthetic training episodes."""
+
+
+def locks(task: Task) -> dict[str, object]:
+    """Config fields fixed in an episode on ``task`` (pass as ``Episode(locked=...)``)."""
+    out: dict[str, object] = {}
+    if task in SYNTHETIC_TRAIN:
+        out.update(TRAIN_LOCKED)
+    if task.dist == "real":
+        out["layout"] = "col"
+    return out
+
 
 ALL: list[Task] = TRAIN + HELD_OUT
 

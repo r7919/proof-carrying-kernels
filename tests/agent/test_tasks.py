@@ -15,6 +15,7 @@ from pck.agent.tasks import (
     SYNTHETIC_TRAIN,
     TRAIN,
     TRAIN_LOCKED,
+    locks,
     shapes,
 )
 
@@ -79,3 +80,10 @@ def test_real_task_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 def test_bits_round_trip() -> None:
     a = real.from_bits(np.arange(0, 65536, 97, dtype=np.uint16))
     np.testing.assert_array_equal(real.to_bits(a), np.arange(0, 65536, 97, dtype=np.uint16))
+
+
+def test_locks_per_task() -> None:
+    assert locks(SYNTHETIC_TRAIN[0]) == TRAIN_LOCKED
+    assert locks(SYNTHETIC_HELD_OUT[0]) == {}
+    assert locks(REAL_TRAIN[0]) == {"layout": "col"}
+    assert locks(REAL_HELD_OUT[0]) == {"layout": "col"}
