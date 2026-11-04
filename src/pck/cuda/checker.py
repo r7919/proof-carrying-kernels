@@ -136,3 +136,47 @@ class GpuBlockedChecker:
     def verdict(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Per-block pass/fail (True = passed every check)."""
         return self.check(x, y).verdict
+
+
+class PendingCheck:
+    """A check queued on a side stream; :meth:`wait` makes the current stream wait for it."""
+
+    def __init__(self, result: CheckResult, done: torch.cuda.Event) -> None:
+        self._result = result
+        self._done = done
+
+    def wait(self) -> CheckResult:
+        stream = torch.cuda.current_stream()
+        stream.wait_event(self._done)
+        for t in (self._result.passed, self._result.rho, self._result.tau):
+            t.record_stream(stream)
+        return self._result
+
+
+class SideStreamChecker:
+    """Runs checks on a dedicated CUDA stream so they overlap later work.
+
+    Each check still starts only after the kernel that produced ``y`` has finished: the side
+    stream waits on an event recorded on the caller's stream at submit time. Checks on one
+    side stream run in submission order, so a ``GpuBlockedChecker``'s scratch space is never
+    used by two checks at once.
+    """
+
+    def __init__(self, device: torch.device | None = None) -> None:
+        self.stream = torch.cuda.Stream(device)
+
+    def submit(self, checker: GpuBlockedChecker, x: torch.Tensor, y: torch.Tensor) -> PendingCheck:
+        ready = torch.cuda.Event()
+        ready.record(torch.cuda.current_stream())
+        with torch.cuda.stream(self.stream):
+            self.stream.wait_event(ready)
+            x.record_stream(self.stream)  # keep the allocator from reusing x and y early
+            y.record_stream(self.stream)
+            result = checker.check(x, y)
+            done = torch.cuda.Event()
+            done.record(self.stream)
+        return PendingCheck(result, done)
+
+    def wait_all(self) -> None:
+        """Make the current stream wait for every check submitted so far."""
+        torch.cuda.current_stream().wait_stream(self.stream)
