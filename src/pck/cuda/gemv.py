@@ -9,6 +9,7 @@ import torch
 from pck.cuda._ext import extension
 
 if TYPE_CHECKING:
+    from pck.agent.column import ColumnConfig
     from pck.agent.config import KernelConfig
 
 
@@ -49,5 +50,16 @@ def gemv_template(W: torch.Tensor, x: torch.Tensor, cfg: KernelConfig) -> torch.
     """
     y: torch.Tensor = extension().gemv_template(
         W, x, cfg.threads, cfg.rows_per_block, cfg.vec, cfg.unroll, template_flags(cfg)
+    )
+    return y
+
+
+def gemv_column(WT: torch.Tensor, x: torch.Tensor, cfg: ColumnConfig) -> torch.Tensor:
+    """y = W x with the column-major template, from ``WT = W.t().contiguous()``.
+
+    Matches :func:`pck.agent.column.emulate_column` bit for bit.
+    """
+    y: torch.Tensor = extension().gemv_column(
+        WT, x, cfg.threads, cfg.vec, cfg.splits, cfg.skip_below
     )
     return y

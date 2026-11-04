@@ -13,6 +13,7 @@ SOURCES = (
     "checker_kernel.cu",
     "sampling_kernel.cu",
     "template_kernel.cu",
+    "column_kernel.cu",
 )
 
 
