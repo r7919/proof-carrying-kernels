@@ -42,3 +42,10 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
+      - id: lean
+        name: lean build + axiom audit
+        entry: bash -c 'cd lean && lake build && lake env lean scripts/Axioms.lean'
+        language: system
+        files: ^lean/
+        pass_filenames: false
+        stages: [pre-push]
