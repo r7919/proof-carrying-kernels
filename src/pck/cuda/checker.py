@@ -103,7 +103,6 @@ class GpuBlockedChecker:
             raise ValueError("sum of |W| over a block overflows BF16")
 
         self.coef = _next_up(gamma(height) + U32, 2)
-        self.geps = _next_up(gamma(n + block + 1, U64), 2)
 
         if segments is None:
             sms = torch.cuda.get_device_properties(W.device).multi_processor_count
@@ -112,6 +111,10 @@ class GpuBlockedChecker:
         if not 1 <= segments <= min(n, 65535):
             raise ValueError(f"segments must be in [1, {min(n, 65535)}], got {segments}")
         self.segments = segments
+        # Terms per thread chain in the compensated FP32 dot product (Dot2): L.
+        chain = ceil_div(ceil_div(n, segments), KERNEL_THREADS)
+        self.geps = _next_up(gamma(n + block + 1, U64) + gamma(2 * chain, U32) ** 2, 4)
+        self.floor = _next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
         scratch = (checks, self.num_blocks, segments)
         self._partial_cx = torch.empty(scratch, dtype=torch.float64, device=W.device)
         self._partial_s = torch.empty(scratch, dtype=torch.float64, device=W.device)
@@ -127,6 +130,7 @@ class GpuBlockedChecker:
             y,
             self.coef,
             self.geps,
+            self.floor,
             self._partial_cx,
             self._partial_s,
             self._counters,

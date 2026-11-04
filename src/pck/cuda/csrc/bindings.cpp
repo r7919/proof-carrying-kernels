@@ -16,9 +16,9 @@ cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t 
                                 int threads, cudaStream_t stream);
 cudaError_t blocked_check(const float* c, const void* a, const int8_t* r, const void* x,
                           const float* y, int64_t n, int block, int num_blocks, int checks,
-                          int segments, double coef, double geps, double* partial_cx,
-                          double* partial_s, unsigned int* counters, bool* passed, double* rho,
-                          double* tau, cudaStream_t stream);
+                          int segments, double coef, double geps, double floor,
+                          double* partial_cx, double* partial_s, unsigned int* counters,
+                          bool* passed, double* rho, double* tau, cudaStream_t stream);
 }  // namespace pck
 
 namespace {
@@ -70,7 +70,7 @@ void check_cuda(const torch::Tensor& t, const char* name, torch::ScalarType dtyp
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> blocked_check(
     const torch::Tensor& c, const torch::Tensor& a, const torch::Tensor& r,
-    const torch::Tensor& x, const torch::Tensor& y, double coef, double geps,
+    const torch::Tensor& x, const torch::Tensor& y, double coef, double geps, double floor,
     torch::Tensor& partial_cx, torch::Tensor& partial_s, torch::Tensor& counters) {
   TORCH_CHECK(y.is_cuda(), "y must be a CUDA tensor");
   const auto device = y.device();
@@ -88,7 +88,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> blocked_check(
   TORCH_CHECK(y.size(0) == num_blocks * block, "y must have shape (nb * b,)");
   TORCH_CHECK(checks >= 1 && num_blocks >= 1 && n >= 1 && block >= 1, "empty checker");
   TORCH_CHECK(checks * num_blocks <= std::numeric_limits<int32_t>::max(), "too many blocks");
-  TORCH_CHECK(coef > 0 && geps > 0, "coef and geps must be positive");
+  TORCH_CHECK(coef > 0 && geps > 0 && floor > 0, "coef, geps and floor must be positive");
   check_cuda(partial_cx, "partial_cx", torch::kFloat64, device);
   check_cuda(partial_s, "partial_s", torch::kFloat64, device);
   check_cuda(counters, "counters", torch::kInt32, device);
@@ -109,7 +109,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> blocked_check(
   const cudaError_t err = pck::blocked_check(
       c.data_ptr<float>(), a.data_ptr(), r.data_ptr<int8_t>(), x.data_ptr(),
       y.data_ptr<float>(), n, static_cast<int>(block), static_cast<int>(num_blocks),
-      static_cast<int>(checks), static_cast<int>(segments), coef, geps,
+      static_cast<int>(checks), static_cast<int>(segments), coef, geps, floor,
       partial_cx.data_ptr<double>(), partial_s.data_ptr<double>(),
       reinterpret_cast<unsigned int*>(counters.data_ptr<int32_t>()), passed.data_ptr<bool>(),
       rho.data_ptr<double>(), tau.data_ptr<double>(), c10::cuda::getCurrentCUDAStream().stream());
@@ -128,6 +128,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("blocked_check", &blocked_check,
         "Trusted blocked checksum checker; returns (passed, rho, tau), each (K, nb)",
         pybind11::arg("c"), pybind11::arg("a"), pybind11::arg("r"), pybind11::arg("x"),
-        pybind11::arg("y"), pybind11::arg("coef"), pybind11::arg("geps"),
+        pybind11::arg("y"), pybind11::arg("coef"), pybind11::arg("geps"), pybind11::arg("floor"),
         pybind11::arg("partial_cx"), pybind11::arg("partial_s"), pybind11::arg("counters"));
 }
