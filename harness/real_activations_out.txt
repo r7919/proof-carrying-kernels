@@ -1,34 +1,33 @@
 # uv run python -m harness.real_activations   (download progress lines removed)
-# CPU (cloud container, no GPU), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2 inputs per layer and prompt, 2026-11-04
-Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 226/290 [00:00<00:00, 2253.10it/s]Loading weights: 100%|██████████| 290/290 [00:00<00:00, 2494.60it/s]
+# RTX 5060 Laptop GPU (WSL2), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2 inputs per layer and prompt, 2026-11-04
 model: Qwen/Qwen2.5-0.5B-Instruct; decode-step inputs, batch 1; coalesced kernel (256 threads)
 
 Per-row tightness, proven bound / actual error
-   down_proj: median      1052x   p1       219x   min        27x
-   gate_proj: median       301x   p1        56x   min        14x
-      k_proj: median       247x   p1        43x   min        21x
-      o_proj: median       348x   p1        66x   min        12x
-      q_proj: median       287x   p1        50x   min        13x
-     up_proj: median       375x   p1        74x   min        14x
-      v_proj: median       312x   p1        56x   min        20x
+   down_proj: median      1050x   p1       220x   min        30x
+   gate_proj: median       300x   p1        56x   min        13x
+      k_proj: median       253x   p1        44x   min        17x
+      o_proj: median       347x   p1        66x   min        16x
+      q_proj: median       285x   p1        49x   min        13x
+     up_proj: median       374x   p1        75x   min        16x
+      v_proj: median       311x   p1        55x   min        24x
 
 Per-block tightness, tau / |rho|, b = 64
-   down_proj: median      7835x   p1      1766x   min       282x
-   gate_proj: median      2076x   p1       521x   min       306x
-      k_proj: median      1645x   p1       341x   min       247x
-      o_proj: median      2346x   p1       536x   min       213x
-      q_proj: median      2017x   p1       412x   min       233x
-     up_proj: median      2822x   p1       715x   min       459x
-      v_proj: median      2147x   p1       599x   min       289x
+   down_proj: median      8317x   p1      1770x   min       388x
+   gate_proj: median      2099x   p1       517x   min       290x
+      k_proj: median      1495x   p1       341x   min       268x
+      o_proj: median      2500x   p1       548x   min       199x
+      q_proj: median      2035x   p1       413x   min       230x
+     up_proj: median      2838x   p1       731x   min       469x
+      v_proj: median      2167x   p1       526x   min       339x
 
 Per-block tightness, tau / |rho|, b = 128
-   down_proj: median     11985x   p1      2381x   min       625x
-   gate_proj: median      2926x   p1       753x   min       476x
-      k_proj: median      2370x   p1       601x   min       414x
-      o_proj: median      3518x   p1       723x   min       434x
-      q_proj: median      2866x   p1       619x   min       299x
-     up_proj: median      4007x   p1      1029x   min       673x
-      v_proj: median      3425x   p1       715x   min       688x
+   down_proj: median     10526x   p1      2466x   min       659x
+   gate_proj: median      2937x   p1       725x   min       520x
+      k_proj: median      2009x   p1       632x   min       531x
+      o_proj: median      3409x   p1       843x   min       494x
+      q_proj: median      2635x   p1       557x   min       299x
+     up_proj: median      4038x   p1      1051x   min       645x
+      v_proj: median      2994x   p1       781x   min       722x
 
 Why not tests: share of decode inputs where a test fails (naive kernel, inputs of
 prompts 2-4; the calibrated atol is 10x the largest honest error on prompt 1)
@@ -50,9 +49,9 @@ prompts 2-4; the calibrated atol is 10x the largest honest error on prompt 1)
   proven checker     down_proj gate_proj    k_proj    o_proj    q_proj   up_proj    v_proj
   honest                  0.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
   drop tail (4)         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
-  BF16 accumulator      100.0%    100.0%     99.3%    100.0%    100.0%    100.0%     95.1%
-  BF16 partials         100.0%    100.0%     97.2%    100.0%    100.0%    100.0%     91.0%
-  BF16 output           100.0%    100.0%     97.9%    100.0%    100.0%    100.0%     96.5%
+  BF16 accumulator      100.0%    100.0%     97.9%    100.0%    100.0%    100.0%     93.8%
+  BF16 partials         100.0%    100.0%     96.5%    100.0%    100.0%    100.0%     95.8%
+  BF16 output           100.0%    100.0%     98.6%    100.0%    100.0%    100.0%     97.2%
 
 proven checker false alarms: 0 (must be 0)
 
