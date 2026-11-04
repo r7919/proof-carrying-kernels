@@ -25,7 +25,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.agent.config import Config, config_index, emulate, make_config
+from pck.agent.config import Config, config_index, config_space, depends_on_x, emulate, make_config
 from pck.agent.regimes import Kernel, RegimeName, evaluate
 from pck.agent.spec import Spec, violates_spec
 from pck.agent.task import Task, activations
@@ -75,15 +75,33 @@ class TimingTable:
         return self.baseline[key] / times[i]
 
     def save(self, path: Path) -> None:
-        """Compact JSON, times rounded to 1 ns (the table is about 300 KB)."""
-        times = {k: [round(t, 3) for t in v] for k, v in self.times.items()}
-        base = {k: round(t, 3) for k, t in self.baseline.items()}
-        path.write_text(json.dumps({"times": times, "baseline": base}, separators=(",", ":")))
+        """Compact JSON, times rounded to 10 ns. Times that do not depend on the input are
+        stored once per shape (they are equal for every task of that shape); the rest
+        once per task."""
+        dep = [depends_on_x(c) for c in config_space()]
+        shape: dict[str, list[float | None]] = {}
+        task: dict[str, list[float]] = {}
+        for key, times in self.times.items():
+            s = key.split("-", 1)[0]
+            fixed = [None if d else round(t, 2) for t, d in zip(times, dep, strict=True)]
+            if shape.setdefault(s, fixed) != fixed:
+                raise ValueError(f"input-independent times differ between tasks of shape {s}")
+            task[key] = [round(t, 2) for t, d in zip(times, dep, strict=True) if d]
+        base = {k: round(t, 2) for k, t in self.baseline.items()}
+        data = {"shape": shape, "task": task, "baseline": base}
+        path.write_text(json.dumps(data, separators=(",", ":")))
 
     @classmethod
     def load(cls, path: Path) -> TimingTable:
         data = json.loads(path.read_text())
-        return cls(times=data["times"], baseline=data["baseline"])
+        if "times" in data:  # the older format: one full list per task
+            return cls(times=data["times"], baseline=data["baseline"])
+        times = {}
+        for key, own in data["task"].items():
+            it = iter(own)
+            fixed = data["shape"][key.split("-", 1)[0]]
+            times[key] = [next(it) if t is None else t for t in fixed]
+        return cls(times=times, baseline=data["baseline"])
 
 
 def hidden_suite(task: Task, per_dist: int = 2) -> list[NDArray[np.float32]]:

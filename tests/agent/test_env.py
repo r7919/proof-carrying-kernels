@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pck.agent.config import KernelConfig, config_index, config_space
+from pck.agent.config import KernelConfig, config_index, config_space, depends_on_x
 from pck.agent.env import (
     TOOLS,
     EmulatorBackend,
@@ -127,6 +127,23 @@ def test_timing_table_round_trips(tmp_path: Path) -> None:
     table().save(path)
     loaded = TimingTable.load(path)
     assert loaded == table()
+    two = TimingTable(
+        times={"8x8-a": [float(i) for i in range(len(config_space()))]},
+        baseline={"8x8-a": 1.0, "8x8-b": 2.0},
+    )
+    two.times["8x8-b"] = [
+        t + 0.5 if depends_on_x(c) else t
+        for t, c in zip(two.times["8x8-a"], config_space(), strict=True)
+    ]
+    two.save(path)
+    assert TimingTable.load(path) == two
+    two.times["8x8-b"][0] += 1  # an input-independent time that differs
+    with pytest.raises(ValueError, match="differ"):
+        two.save(path)
+    import json
+
+    path.write_text(json.dumps({"times": table().times, "baseline": table().baseline}))
+    assert TimingTable.load(path) == table()  # the older format
     assert loaded.speedup(HONEST, Task(TASK_M, TASK_N)) == pytest.approx(1.2)
     assert np.isfinite(loaded.baseline[task_key(Task(TASK_M, TASK_N))])
 
