@@ -102,8 +102,12 @@ Cost next to the sampler being checked (RTX 5060, V = 151,936, k = 50, p = 0.9; 
 
 | Batch | top-k sampler | top-k checker | top-p selection | top-p checker |
 |---|---|---|---|---|
-| 1 | 386 us | 25 us | 256 us | 91 us |
-| 8 | 363 us | 36 us | 814 us | 311 us |
+| 1 | 354 us | 25 us | 253 us | 65 us |
+| 8 | 366 us | 39 us | 812 us | 153 us |
+
+Computing the top-p terms with FP32 `expf` on a split argument instead of FP64 `exp` cut
+the top-p checker from 91 to 65 us at batch 1 and from 311 to 153 us at batch 8 (FP64 runs
+at 1/64 rate on this GPU), for about 1e-6 more slack.
 
 ### Tightness
 
