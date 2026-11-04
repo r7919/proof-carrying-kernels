@@ -12,8 +12,10 @@ spec, yet still catches low-precision shortcuts, dropped work and bit flips.
 ## Status
 
 Phase 1. The bit-faithful kernel model, checker and fault injector are in `src/pck/`,
-tested against the properties the Lean theorems will state. The first CUDA kernel, a naive
-BF16 GEMV that matches the model bit for bit, is in `src/pck/cuda/`. Lean proofs come next.
+tested against the properties the Lean theorems will state. Two CUDA GEMV kernels are in
+`src/pck/cuda/`: a naive one and a coalesced one (16-byte loads, warp-shuffle reduction).
+Each matches its CPU model in `pck.gemv` bit for bit, so its summation tree, and therefore
+its proven error bound, is known exactly. Lean proofs come next.
 
 ## Layout
 
