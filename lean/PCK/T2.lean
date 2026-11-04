@@ -17,14 +17,15 @@ open Finset
 
 variable {b n : ℕ}
 
-theorem t2_block {u : ℝ} {h : ℕ} (hu : 0 ≤ u) (hh : (h : ℝ) * u < 1)
+/-- The residual is at least the faulty output's deviation minus `(gamma_h + u) * (a . |x|)`. -/
+theorem t2_residual_lower {u : ℝ} {h : ℕ} (hu : 0 ≤ u) (hh : (h : ℝ) * u < 1)
     (W : Fin b → Fin n → ℝ) (x : Fin n → ℝ) (y : Fin b → ℝ) (i₀ : Fin b)
     (hy : ∀ i, i ≠ i₀ → |y i - ∑ j, W i j * x j| ≤ gamma h u * ∑ j, |W i j * x j|)
     (r : Fin b → ℝ) (hr : ∀ i, r i = 1 ∨ r i = -1)
     (c : Fin n → ℝ) (hc : ∀ j, |c j - ∑ i, r i * W i j| ≤ u * |∑ i, r i * W i j|)
-    (a : Fin n → ℝ) (ha : ∀ j, ∑ i, |W i j| ≤ a j)
-    (hdev : 2 * ((gamma h u + u) * ∑ j, a j * |x j|) < |y i₀ - ∑ j, W i₀ j * x j|) :
-    (gamma h u + u) * ∑ j, a j * |x j| < |∑ j, c j * x j - ∑ i, r i * y i| := by
+    (a : Fin n → ℝ) (ha : ∀ j, ∑ i, |W i j| ≤ a j) :
+    |y i₀ - ∑ j, W i₀ j * x j| - (gamma h u + u) * ∑ j, a j * |x j| ≤
+      |∑ j, c j * x j - ∑ i, r i * y i| := by
   set S := ∑ j, a j * |x j|
   set D := fun i => y i - ∑ j, W i j * x j
   have hD0 : |r i₀ * D i₀| = |D i₀| := by rcases hr i₀ with h0 | h0 <;> simp [h0]
@@ -40,7 +41,7 @@ theorem t2_block {u : ℝ} {h : ℕ} (hu : 0 ≤ u) (hh : (h : ℝ) * u < 1)
   have hsplit : ∑ i, r i * D i = r i₀ * D i₀ + ∑ i ∈ univ.erase i₀, r i * D i :=
     (add_sum_erase _ _ (mem_univ i₀)).symm
   rw [residual_split W x y r c]
-  change _ < |∑ j, (c j - ∑ i, r i * W i j) * x j - ∑ i, r i * D i|
+  change _ ≤ |∑ j, (c j - ∑ i, r i * W i j) * x j - ∑ i, r i * D i|
   rw [hsplit]
   -- |A - (B + R)| ≥ |B| - |A| - |R|
   have key : |r i₀ * D i₀| - |∑ j, (c j - ∑ i, r i * W i j) * x j|
@@ -57,6 +58,18 @@ theorem t2_block {u : ℝ} {h : ℕ} (hu : 0 ≤ u) (hh : (h : ℝ) * u < 1)
     rw [e, abs_neg] at h1
     linarith
   rw [hD0] at key
-  have hD : 2 * ((gamma h u + u) * S) < |D i₀| := hdev
-  nlinarith
+  change |D i₀| - (gamma h u + u) * S ≤ _
+  linarith
+
+theorem t2_block {u : ℝ} {h : ℕ} (hu : 0 ≤ u) (hh : (h : ℝ) * u < 1)
+    (W : Fin b → Fin n → ℝ) (x : Fin n → ℝ) (y : Fin b → ℝ) (i₀ : Fin b)
+    (hy : ∀ i, i ≠ i₀ → |y i - ∑ j, W i j * x j| ≤ gamma h u * ∑ j, |W i j * x j|)
+    (r : Fin b → ℝ) (hr : ∀ i, r i = 1 ∨ r i = -1)
+    (c : Fin n → ℝ) (hc : ∀ j, |c j - ∑ i, r i * W i j| ≤ u * |∑ i, r i * W i j|)
+    (a : Fin n → ℝ) (ha : ∀ j, ∑ i, |W i j| ≤ a j)
+    (hdev : 2 * ((gamma h u + u) * ∑ j, a j * |x j|) < |y i₀ - ∑ j, W i₀ j * x j|) :
+    (gamma h u + u) * ∑ j, a j * |x j| < |∑ j, c j * x j - ∑ i, r i * y i| := by
+  have := t2_residual_lower hu hh W x y i₀ hy r hr c hc a ha
+  linarith
+
 end PCK
