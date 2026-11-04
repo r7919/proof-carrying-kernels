@@ -3,8 +3,9 @@
 //
 // WT = W^T is (n, m) and contiguous, so column j of W is the contiguous row WT[j, :].
 // Grid (row tiles, splits); a block of threads = 32 * K threads is K warps. Lane g of warp
-// k owns rows r0 .. r0 + VEC - 1 of its tile (one VEC-wide vector load per column), and
-// split q = blockIdx.y * K + k sums columns q, q + Q, q + 2Q, ... (Q = K * splits)
+// k owns rows r0 .. r0 + VEC - 1 of its tile (one VEC-wide vector load per column). Grid
+// split s owns the contiguous columns [s C, (s + 1) C), C = ceil(n / splits), so blocks
+// stream through contiguous rows of WT; warp k sums columns s C + k, s C + k + K, ...
 // sequentially from 0, loading kUnroll columns before adding them (same order). The block
 // halves its K splits in shared memory. With more than one grid split, each block writes
 // its partials and takes a ticket; the last block of a row tile halves the splits of its
@@ -44,20 +45,23 @@ __global__ void column_kernel(const __nv_bfloat16* __restrict__ WT,
   const int64_t tile0 = static_cast<int64_t>(blockIdx.x) * kWarp * VEC;
   const int64_t r0 = tile0 + static_cast<int64_t>(g) * VEC;
   const bool active = r0 < m;  // m % VEC == 0, so a vector is all in or all out
-  const int64_t q_total = static_cast<int64_t>(warps) * splits;
+  // Grid split s owns the contiguous columns [j_begin, j_end); warp k takes every
+  // warps-th of them, kUnroll at a time.
+  const int64_t chunk = (n + splits - 1) / splits;
+  const int64_t j_begin = static_cast<int64_t>(blockIdx.y) * chunk;
+  const int64_t j_end = j_begin + chunk < n ? j_begin + chunk : n;
   float acc[VEC];
 #pragma unroll
   for (int v = 0; v < VEC; ++v) acc[v] = 0.0f;
-  for (int64_t j0 = static_cast<int64_t>(blockIdx.y) * warps + k; j0 < n;
-       j0 += kUnroll * q_total) {
+  for (int64_t j0 = j_begin + k; j0 < j_end; j0 += static_cast<int64_t>(kUnroll) * warps) {
     BF16Vec<VEC> w[kUnroll];
     float xs[kUnroll];
     bool use[kUnroll];
 #pragma unroll
     for (int u = 0; u < kUnroll; ++u) {
-      const int64_t j = j0 + u * q_total;
-      xs[u] = j < n ? __bfloat162float(x[j]) : 0.0f;
-      use[u] = j < n && !(fabsf(xs[u]) < skip_below) && active;
+      const int64_t j = j0 + static_cast<int64_t>(u) * warps;
+      xs[u] = j < j_end ? __bfloat162float(x[j]) : 0.0f;
+      use[u] = j < j_end && !(fabsf(xs[u]) < skip_below) && active;
       if (use[u]) w[u] = *reinterpret_cast<const BF16Vec<VEC>*>(WT + j * m + r0);
     }
 #pragma unroll
