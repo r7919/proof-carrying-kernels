@@ -72,8 +72,9 @@ def block_ratios(
     rng: np.random.Generator,
 ) -> NDArray[np.float64]:
     """tau / |rho| per block, one random sign vector per block (checker arithmetic)."""
-    nb = M // b
-    Wb = W.reshape(nb, b, N).astype(np.float64)
+    m, n = W.shape
+    nb = m // b
+    Wb = W.reshape(nb, b, n).astype(np.float64)
     x64 = x.astype(np.float64)
     r = rng.choice([-1.0, 1.0], (nb, b))
     c = np.einsum("kb,kbn->kn", r, Wb).astype(np.float32).astype(np.float64)
