@@ -1,7 +1,9 @@
 """Checker overhead on a full decode layer, with checks serial or overlapped.
 
-One transformer decode layer at batch 1 runs seven GEMVs (Llama-3-8B shapes by default:
-q, k, v, o, gate, up, down). This times the whole layer three ways, on a cold L2:
+One transformer decode layer at batch 1 multiplies by seven weight matrices (Llama-3-8B
+shapes: q, k, v, o, gate, up, down). Inference engines fuse the ones that share an input,
+so the default "fused" layout runs four GEMVs: qkv, o, gate_up, down; "split" runs all
+seven. This times the whole layer three ways, on a cold L2:
 
   gemv only       the seven coalesced GEMVs
   serial checks   each GEMV followed by its checker on the same stream
@@ -25,15 +27,23 @@ from pck.fp import tree_height
 
 THREADS = 256
 # (name, m, n) for Llama-3-8B: hidden 4096, 8 KV heads of 128, MLP 14336.
-LAYER = [
-    ("q", 4096, 4096),
-    ("k", 1024, 4096),
-    ("v", 1024, 4096),
-    ("o", 4096, 4096),
-    ("gate", 14336, 4096),
-    ("up", 14336, 4096),
-    ("down", 4096, 14336),
-]
+LAYOUTS = {
+    "split": [
+        ("q", 4096, 4096),
+        ("k", 1024, 4096),
+        ("v", 1024, 4096),
+        ("o", 4096, 4096),
+        ("gate", 14336, 4096),
+        ("up", 14336, 4096),
+        ("down", 4096, 14336),
+    ],
+    "fused": [
+        ("qkv", 6144, 4096),
+        ("o", 4096, 4096),
+        ("gate_up", 28672, 4096),
+        ("down", 4096, 14336),
+    ],
+}
 
 
 def main() -> None:
@@ -41,11 +51,12 @@ def main() -> None:
     parser.add_argument("--block", type=int, default=64)
     parser.add_argument("--checks", type=int, default=1)
     parser.add_argument("--reps", type=int, default=100)
+    parser.add_argument("--layout", choices=sorted(LAYOUTS), default="fused")
     args = parser.parse_args()
 
     gen = torch.Generator().manual_seed(0)
     mats = []
-    for name, m, n in LAYER:
+    for name, m, n in LAYOUTS[args.layout]:
         W = (torch.randn(m, n, generator=gen) * 0.02).to(torch.bfloat16).cuda()
         x = torch.randn(n, generator=gen).to(torch.bfloat16).cuda()
         checker = GpuBlockedChecker(
@@ -85,7 +96,8 @@ def main() -> None:
     bank_mib = sum(c.c.numel() * 4 + c.a.numel() * 2 for *_, c in mats) / 2**20
 
     print(
-        f"device: {torch.cuda.get_device_name()}; b = {args.block}, K = {args.checks};"
+        f"device: {torch.cuda.get_device_name()}; {args.layout} layout ({len(mats)} GEMVs);"
+        f" b = {args.block}, K = {args.checks};"
         f" weights {weight_mib:.0f} MiB, checksum bank {bank_mib:.1f} MiB"
         f" ({bank_mib / weight_mib:.1%})"
     )
