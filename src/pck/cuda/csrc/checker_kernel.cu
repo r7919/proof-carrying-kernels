@@ -2,7 +2,7 @@
 //
 // Inputs are precomputed at weight load by trusted code (pck.cuda.checker):
 //   c[k, beta, :] = r[k, beta, :]^T W_beta     FP32 (computed in FP64, rounded to nearest)
-//   a[beta, :]    = sum_{i in beta} |W_i|       FP32, rounded UP
+//   a[beta, :]    = sum_{i in beta} |W_i|       BF16, rounded UP
 //   r[k, beta, :] in {-1, +1}                   int8, secret
 // For every check k and row block beta, after the GEMV has finished:
 //   rho = c . x - r . y_beta                       FP64, round to nearest
@@ -11,6 +11,9 @@
 // where coef >= gamma_h + u32 and geps >= gamma_{n+b+1}(u64) are rounded up on the host.
 // The block passes only if every y in it is finite and |rho| <= tau, so NaN/Inf always
 // raise the alarm.
+//
+// Traffic per block of b BF16 weight rows: K FP32 c rows + one BF16 a row, i.e. about
+// (2K + 1) / b of the GEMV's.
 //
 // Why this is sound and cheap:
 //  * c_j * x_j (FP32 x BF16: 24 + 8 significand bits) is exact in FP64, so one FP64 FMA
@@ -71,7 +74,7 @@ __device__ double block_sum(double v, double* shared) {
 }
 
 __global__ void __launch_bounds__(kThreads)
-    blocked_check_kernel(const float* __restrict__ c, const float* __restrict__ a,
+    blocked_check_kernel(const float* __restrict__ c, const __nv_bfloat16* __restrict__ a,
                          const int8_t* __restrict__ r, const __nv_bfloat16* __restrict__ x,
                          const float* __restrict__ y, int64_t n, int64_t seg_len, int block,
                          int num_blocks, double coef, double geps, double* partial_cx,
@@ -86,7 +89,7 @@ __global__ void __launch_bounds__(kThreads)
   const int64_t seg = blockIdx.y;
   const int64_t beta = check_block % num_blocks;
   const float* c_row = c + check_block * n;
-  const float* a_row = a + beta * n;
+  const __nv_bfloat16* a_row = a + beta * n;
 
   if (t == 0) {
     nonfinite = 0;
@@ -101,7 +104,7 @@ __global__ void __launch_bounds__(kThreads)
   for (int64_t j = seg * seg_len + t; j < j_end; j += kThreads) {
     const float xj = __bfloat162float(x[j]);
     cx = __fma_rn(static_cast<double>(c_row[j]), static_cast<double>(xj), cx);  // exact product
-    s = __fadd_ru(s, __fmul_ru(a_row[j], fabsf(xj)));
+    s = __fadd_ru(s, __fmul_ru(__bfloat162float(a_row[j]), fabsf(xj)));
   }
   cx = block_sum<false>(cx, shared);
   // FP32 round-up partial sums are exact in FP64, and the FP64 tree also rounds up.
@@ -159,7 +162,7 @@ __global__ void __launch_bounds__(kThreads)
 
 }  // namespace
 
-cudaError_t blocked_check(const float* c, const float* a, const int8_t* r, const void* x,
+cudaError_t blocked_check(const float* c, const void* a, const int8_t* r, const void* x,
                           const float* y, int64_t n, int block, int num_blocks, int checks,
                           int segments, double coef, double geps, double* partial_cx,
                           double* partial_s, unsigned int* counters, bool* passed, double* rho,
@@ -168,7 +171,8 @@ cudaError_t blocked_check(const float* c, const float* a, const int8_t* r, const
   const dim3 grid(static_cast<unsigned int>(checks) * num_blocks,
                   static_cast<unsigned int>(segments));
   blocked_check_kernel<<<grid, kThreads, 0, stream>>>(
-      c, a, r, static_cast<const __nv_bfloat16*>(x), y, n, seg_len, block, num_blocks, coef,
+      c, static_cast<const __nv_bfloat16*>(a), r, static_cast<const __nv_bfloat16*>(x), y, n,
+      seg_len, block, num_blocks, coef,
       geps, partial_cx, partial_s, counters, passed, rho, tau);
   return cudaGetLastError();
 }
