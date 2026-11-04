@@ -52,10 +52,11 @@ def test_legit_gpu_output_passes(block: int) -> None:
 
 
 def test_matches_fp64_reference() -> None:
-    """rho matches an FP64 reference; tau is never below it (T3) and at most 0.1% above.
+    """rho matches an FP64 reference; tau is never below it (T3) and only slightly above.
 
     The kernel bounds a . |x| with round-up FP32 arithmetic, which is looser than exact by
-    at most about n * 2^-24 relative, and bounds |c| . |x| by (1 + u32) * a . |x|.
+    at most about n * 2^-24 relative, and bounds |c| . |x| by (1 + u32) * a . |x|. The
+    reference uses the stored (BF16, rounded up) a, so only the FP32 slack remains.
     """
     _, x, Wt, xt = problem(m=256, n=1000, seed=1)
     checker = GpuBlockedChecker(
@@ -65,7 +66,7 @@ def test_matches_fp64_reference() -> None:
     res = checker.check(xt, y)
 
     c = checker.c.cpu().numpy().astype(np.float64)
-    a = checker.a.cpu().numpy().astype(np.float64)
+    a = checker.a.float().cpu().numpy().astype(np.float64)
     r = checker.r.cpu().numpy().astype(np.float64)
     x64, yb = x.astype(np.float64), y.cpu().numpy().astype(np.float64).reshape(-1, 32)
     rho = c @ x64 - np.einsum("kbi,bi->kb", r, yb)
@@ -184,7 +185,7 @@ def test_segment_count_does_not_change_result(segments: int) -> None:
     torch.testing.assert_close(split.rho, ref.rho, rtol=0, atol=1e-12)
     torch.testing.assert_close(split.tau, ref.tau, rtol=(1000 + 1) * 2.0**-24, atol=0)
 
-    a = split_checker.a.cpu().numpy().astype(np.float64)
+    a = split_checker.a.float().cpu().numpy().astype(np.float64)
     s_exact = a @ np.abs(x.astype(np.float64))
     assert np.all(split.tau.cpu().numpy() >= (gamma(HEIGHT) + U32) * s_exact * (1 - 1e-12))
 
@@ -210,3 +211,13 @@ def test_rejects_bad_segment_count(segments: int) -> None:
     _, _, Wt, _ = problem(m=64, n=1000)
     with pytest.raises(ValueError, match="segments"):
         GpuBlockedChecker(Wt, 16, 4, segments=segments)
+
+
+def test_a_is_bf16_rounded_up_from_exact() -> None:
+    W, _, Wt, _ = problem(m=256, n=1000, seed=8)
+    checker = GpuBlockedChecker(Wt, 32, HEIGHT)
+    a = checker.a.float().cpu().numpy().astype(np.float64)
+    exact = np.abs(W.astype(np.float64)).reshape(256 // 32, 32, 1000).sum(axis=1)
+    assert checker.a.dtype == torch.bfloat16
+    assert np.all(a >= exact)
+    assert np.all(a <= exact * (1 + 2.0**-7))
