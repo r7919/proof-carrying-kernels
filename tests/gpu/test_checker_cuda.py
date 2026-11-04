@@ -163,3 +163,42 @@ def test_rejects_bad_check_inputs(which: str, match: str) -> None:
     }[which]
     with pytest.raises(RuntimeError, match=match):
         checker.check(*args)
+
+
+@pytest.mark.parametrize("segments", [1, 2, 3, 7, 64, 1000])
+def test_segment_count_does_not_change_result(segments: int) -> None:
+    """Splitting columns across CUDA blocks changes only the FP64 summation order."""
+    _, _, Wt, xt = problem(m=256, n=1000, seed=6)
+    y = gemv_coalesced(Wt, xt, 128)
+    ref = GpuBlockedChecker(
+        Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(6), segments=1
+    ).check(xt, y)
+    split = GpuBlockedChecker(
+        Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(6), segments=segments
+    ).check(xt, y)
+    assert torch.equal(split.passed, ref.passed)
+    torch.testing.assert_close(split.rho, ref.rho, rtol=0, atol=1e-12)
+    torch.testing.assert_close(split.tau, ref.tau, rtol=1e-12, atol=0)
+
+
+def test_repeated_calls_reuse_scratch_correctly() -> None:
+    _, _, Wt, xt = problem(seed=7)
+    checker = make(Wt, 64, checks=2)
+    assert checker.segments >= 1
+    y = gemv_coalesced(Wt, xt, THREADS)
+    bad = y.clone()
+    bad[5] = math.nan
+    first = checker.check(xt, y)
+    for _ in range(20):
+        assert torch.equal(checker.verdict(xt, bad)[1:], first.verdict[1:])
+        assert not checker.verdict(xt, bad)[0]
+        again = checker.check(xt, y)
+        assert torch.equal(again.passed, first.passed)
+        assert torch.equal(again.rho, first.rho)
+
+
+@pytest.mark.parametrize("segments", [0, 1001])
+def test_rejects_bad_segment_count(segments: int) -> None:
+    _, _, Wt, _ = problem(m=64, n=1000)
+    with pytest.raises(ValueError, match="segments"):
+        GpuBlockedChecker(Wt, 16, 4, segments=segments)
