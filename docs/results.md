@@ -12,7 +12,7 @@ produced it and the file with its full output, so every number here can be repro
 | False alarms and bit flips | `harness/campaign.py` | `harness/campaign_out.txt` |
 | Sampling checker cost | `harness/bench_sampling.py` | `harness/bench_sampling_out.txt` |
 | Tightness, synthetic activations (CPU) | `harness/tightness.py` | `harness/tightness_out.txt` |
-| Tightness, real activations | `python -m harness.real_activations` | (run on a machine with model access) |
+| Tightness, real activations | `python -m harness.real_activations` | `harness/real_activations_out.txt` |
 
 ## Measurements
 
@@ -126,3 +126,29 @@ activations). Full output: `harness/tightness_out.txt`.
 - A per-element tolerance calibrated on Gaussian activations (10x the largest error seen)
   raises false alarms on 0.04% of outputs with outlier activations and 99.99% with
   mixed-scale ones; the proven threshold raises none, since it scales with sum |W x|.
+
+### Tightness on real activations
+
+`python -m harness.real_activations`: Qwen2.5-0.5B-Instruct in BF16, decode-step inputs to
+every linear layer (4 prompts x 16 tokens, 8 inputs kept per layer), through the bit-exact
+model of the coalesced kernel. Full output: `harness/real_activations_out.txt`.
+
+| Layer | Row bound / error, median (min) | Block tau / \|rho\|, b = 64, median (min) | b = 128, median (min) |
+|---|---|---|---|
+| q_proj | 293x (13x) | 2057x (223x) | 2653x (262x) |
+| k_proj | 251x (18x) | 1554x (306x) | 2409x (327x) |
+| v_proj | 311x (26x) | 2266x (363x) | 3171x (772x) |
+| o_proj | 348x (15x) | 2406x (242x) | 3439x (539x) |
+| gate_proj | 293x (10x) | 1982x (271x) | 2868x (437x) |
+| up_proj | 372x (15x) | 2847x (379x) | 4098x (668x) |
+| down_proj | 1059x (39x) | 8053x (661x) | 10801x (810x) |
+
+- No proven-bound violations. Real activations come closer to the bound than any synthetic
+  case (minimum 10x, in `gate_proj`, against 25x for synthetic outliers), but never cross it.
+- Block tightness matches the synthetic study: 1,500-10,800x (median), far looser than
+  V-ABFT, as expected for a threshold that may never false-alarm.
+- The Gaussian-calibrated tolerance raised **no** false alarms on this model's decode
+  activations. That is a negative result for the "why not tests" argument here, with a
+  caveat: the calibration was re-tuned to each input's own RMS, which is generous. A fixed
+  per-layer tolerance, as a test harness would use, is the fairer comparison and is still to
+  be run; the synthetic mixed-scale case shows the failure mode it guards against.
