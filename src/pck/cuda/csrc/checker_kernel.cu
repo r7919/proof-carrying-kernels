@@ -8,8 +8,9 @@
 //   rho = c . x - r . y_beta        c . x in compensated FP32 per thread, then FP64
 //   s   = a . |x|                   FP32, every operation rounded UP
 //   tau = coef * s + geps * ((1 + u32) * s + sum |y_beta|) + tau_floor  rounded UP
-// where coef >= gamma_h + u32, geps >= gamma_{n+b+1}(u64) + gamma_{2L}(u32)^2 (L = terms
-// per thread chain) and tau_floor >= n * 2^-148 are rounded up on the host. The block passes
+// where coef >= gamma_h + u32, geps >= gH + g2 + gH * g2 (gH = gamma_H(u64) for the FP64
+// reduction height H, g2 = gamma_{2L}(u32)^2 for L terms per thread chain) and
+// tau_floor >= n * 2^-148 are rounded up on the host. The block passes
 // only if every y in it is finite and |rho| <= tau, so NaN/Inf always raise the alarm.
 //
 // Traffic per block of b BF16 weight rows: K FP32 c rows + one BF16 a row, i.e. about
@@ -25,7 +26,8 @@
 //  * Underflow can make TwoProduct inexact by at most 2^-149 per product; tau_floor covers
 //    it.
 //  * The FP64 reductions across threads and segments, and r . y, round to nearest; their
-//    error is at most gamma_{n+b+1}(u64) * (sum |c_j x_j| + sum |y|).
+//    error is at most gamma_H(u64) * (sum |c_j x_j| + sum |y|), H <= 21 + segments +
+//    ceil(b / 256). The Dot2 and FP64 errors compound, hence the gH * g2 term.
 //  * s is an upper bound on a . |x| because every FP32 operation rounds up; it is looser
 //    than exact by at most ~(n + 1) * 2^-24 relative.
 //  * |c_j| <= (1 + u32) * a_j because |r^T W_j| <= sum |W_ij|, c is rounded to nearest

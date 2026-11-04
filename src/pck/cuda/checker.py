@@ -118,7 +118,14 @@ class GpuBlockedChecker:
         self.segments = segments
         # Terms per thread chain in the compensated FP32 dot product (Dot2): L.
         chain = ceil_div(ceil_div(n, segments), KERNEL_THREADS)
-        self.geps = _next_up(gamma(n + block + 1, U64) + gamma(2 * chain, U32) ** 2, 4)
+        g2 = gamma(2 * chain, U32) ** 2  # Dot2 error per thread chain
+        # Height of the checker's FP64 reduction tree for rho: two block reductions (10 levels
+        # each: 5 within a warp, 5 across warps), the segment loop, the per-thread r . y
+        # chain, and the final subtraction. n + b + 1 also bounds it for any realistic shape.
+        fp64_height = max(n + block + 1, 21 + segments + ceil_div(block, KERNEL_THREADS))
+        gh = gamma(fp64_height, U64)
+        # The two errors compound: (1 + gh)(1 + g2) - 1 (proved in lean/PCK/T3.lean).
+        self.geps = _next_up(gh + g2 + gh * g2, 4)
         self.tau_floor = _next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
         scratch = (checks, self.num_blocks, segments)
         self._partial_cx = torch.empty(scratch, dtype=torch.float64, device=W.device)
