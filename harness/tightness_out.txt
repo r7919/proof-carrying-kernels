@@ -1,0 +1,34 @@
+# uv run python harness/tightness.py   (CPU, bit-exact model of the coalesced kernel), 2026-11-04
+m = n = 4096, coalesced kernel (256 threads), tree height h = 23
+gamma_h = 1.371e-06 (proven)   Higham-Mary gamma~ = 1.698e-06 (probabilistic)
+
+1. Per-row tightness, proven bound / actual error (rows with nonzero error)
+        gauss: median      1118x   p1       257x   min       124x   (0.0% rows exact)
+    student-t: median       853x   p1       185x   min        71x   (0.0% rows exact)
+     outliers: median       194x   p1        44x   min        25x   (0.0% rows exact)
+  mixed-scale: median       252x   p1        60x   min        36x   (0.0% rows exact)
+
+2. Per-block tightness, tau / |rho| (one sign vector per block)
+  b =  64       gauss: median      8118x   p1      2105x   min      1479x
+  b =  64   student-t: median      6131x   p1      1812x   min      1370x
+  b =  64    outliers: median      1558x   p1       372x   min       268x
+  b =  64 mixed-scale: median      1909x   p1       568x   min       476x
+  b = 128       gauss: median     11535x   p1      3210x   min      2606x
+  b = 128   student-t: median      9796x   p1      2171x   min      1817x
+  b = 128    outliers: median      2144x   p1       644x   min       560x
+  b = 128 mixed-scale: median      2977x   p1       867x   min       664x
+  V-ABFT (reported, BF16): 48x to 158x
+
+3. Probabilistic tier (Higham-Mary, P(fail) <= 1e-6 per row; not proven)
+        gauss: median      1384x   p1       319x   min       153x   violations 0
+    student-t: median      1056x   p1       229x   min        88x   violations 0
+     outliers: median       240x   p1        54x   min        31x   violations 0
+  mixed-scale: median       313x   p1        75x   min        45x   violations 0
+
+4. Why not tests: per-element tolerance calibrated on Gaussian x (10x max error)
+  atol = 5.733e-06, rtol = 5.446e-03
+            x    atol alarms    rtol alarms  proven alarms
+        gauss          0.00%          0.00%          0.00%
+    student-t          0.00%          0.00%          0.00%
+     outliers          0.04%          0.00%          0.00%
+  mixed-scale         99.99%          0.01%          0.00%
