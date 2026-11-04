@@ -72,7 +72,10 @@ class TimingTable:
         return self.baseline[key] / self.times[key][config_index(cfg)]
 
     def save(self, path: Path) -> None:
-        path.write_text(json.dumps({"times": self.times, "baseline": self.baseline}, indent=1))
+        """Compact JSON, times rounded to 1 ns (the table is about 300 KB)."""
+        times = {k: [round(t, 3) for t in v] for k, v in self.times.items()}
+        base = {k: round(t, 3) for k, t in self.baseline.items()}
+        path.write_text(json.dumps({"times": times, "baseline": base}, separators=(",", ":")))
 
     @classmethod
     def load(cls, path: Path) -> TimingTable:
