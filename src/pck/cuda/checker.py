@@ -74,7 +74,8 @@ class GpuBlockedChecker:
 
         a64 = W64.abs().sum(dim=1)
         a32 = a64.float()
-        self.a = torch.where(a32.double() < a64, torch.nextafter(a32, torch.tensor(math.inf)), a32)
+        up = torch.nextafter(a32, torch.full_like(a32, math.inf))
+        self.a = torch.where(a32.double() < a64, up, a32)
 
         self.coef = _next_up(gamma(height) + U32, 2)
         self.geps = _next_up(gamma(n + block + 1, U64), 2)
