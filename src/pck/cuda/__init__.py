@@ -1,6 +1,7 @@
 """CUDA kernels. Requires the ``gpu`` extra (PyTorch with CUDA) and nvcc."""
 
 from pck.cuda.checker import (
+    DEFAULT_BLOCK,
     CheckResult,
     GpuBlockedChecker,
     PendingCheck,
@@ -10,6 +11,7 @@ from pck.cuda.checker import (
 from pck.cuda.gemv import gemv_coalesced, gemv_naive
 
 __all__ = [
+    "DEFAULT_BLOCK",
     "CheckResult",
     "GpuBlockedChecker",
     "PendingCheck",
