@@ -55,6 +55,7 @@ each theorem to the code.
 | `t2_block` | **T2, detection**: one output off by more than twice the threshold, others in spec: always caught |
 | `t3_no_false_alarm`, `t3_single_fault_detected` | **T3**: T1 and T2 hold for the check *as computed* (rounded residual, round-up threshold) |
 | `t4_computed` | **T4, randomized detection**: one output off by more than the threshold, others arbitrary (even crafted): passes at most half of all sign vectors, 2^-K for K of them |
+| `t4_spread_computed` | **T4, spread-out errors**: every output only slightly off but \|\|D\|\|_2 >= 2x the threshold: passes at most 13/16 of sign vectors, (13/16)^K for K (Paley-Zygmund) |
 | `topK_check_iff_max_sum` | The top-k check accepts exactly the k-sets of largest total logit |
 
 Assumptions (the rounding model, exact FP32 x BF16 products in FP64, and the Dot2 bound
@@ -117,5 +118,5 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 | 0. Setup | done |
 | 1. Numerics study, GEMV kernels, GPU checker (overhead < 5%, zero false alarms) | done |
 | 2. Lean proofs T1-T3 and CI | done |
-| 3. Sampling checker, faults, tightness, T4 | done except the Paley-Zygmund part of T4 and real-activation tightness |
+| 3. Sampling checker, faults, tightness (synthetic and real activations), T4 | done |
 | 4-6. Agent environment, GRPO training, write-up | not started |
