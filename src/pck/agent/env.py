@@ -204,10 +204,16 @@ class Episode:
         for name, value in self.locked.items():
             if name in config and config[name] != value:
                 return f"invalid config: {name} is fixed to {value!r} in this task"
+        fields = dict(config)
+        if "layout" in self.locked:
+            fields.setdefault("layout", self.locked["layout"])
         try:
-            cfg = make_config(config)
+            cfg = make_config(fields)
         except (TypeError, ValueError) as e:
             return f"invalid config: {e}"
+        for name, value in self.locked.items():  # fields the chosen template has
+            if hasattr(cfg, name) and getattr(cfg, name) != value:
+                return f"invalid config: {name} is fixed to {value!r} in this task"
         self.cfg, self.slot_code, self.kernel = cfg, slot_code, None
         return "ok"
 

@@ -153,3 +153,13 @@ def test_locked_fields_cannot_be_changed() -> None:
     out = ep.call("write_kernel", {"config": {"skip_tail": True}})
     assert out == "invalid config: skip_tail is fixed to False in this task"
     assert ep.call("write_kernel", {"config": {"skip_tail": False}}) == "ok"
+
+
+def test_locked_layout_is_filled_in_and_enforced() -> None:
+    from pck.agent.column import ColumnConfig
+
+    ep = episode("calibrated", locked={"layout": "col", "skip_tail": False})
+    assert ep.call("write_kernel", {"config": {"splits": 16}}) == "ok"
+    assert ep.cfg == ColumnConfig(splits=16)  # layout filled in; skip_tail not a column field
+    out = ep.call("write_kernel", {"config": {"layout": "row"}})
+    assert out == "invalid config: layout is fixed to 'col' in this task"
