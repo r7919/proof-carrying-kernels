@@ -36,8 +36,8 @@ def main() -> None:
     print("times: median ms, cold L2; overhead = (GEMV + check) / GEMV - 1")
     print("'check' times the checker alone, so its fixed cost (launch, tail) is visible")
     print(
-        f"{'m x n':>13s} {'b':>4s} {'GEMV':>8s} {'check':>8s} {'+check':>8s} {'overhead':>9s}"
-        f" {'traffic est.':>12s} {'false alarms':>12s}"
+        f"{'m x n':>13s} {'b':>4s} {'seg':>4s} {'GEMV':>8s} {'check':>8s} {'+check':>8s}"
+        f" {'overhead':>9s} {'traffic est.':>12s} {'false alarms':>12s}"
     )
     for m, n in SHAPES:
         W = (torch.randn(m, n, device="cuda") * 0.02).to(torch.bfloat16)
@@ -52,7 +52,8 @@ def main() -> None:
             both = timer(lambda: checker.check(x, gemv_coalesced(W, x, THREADS)))  # noqa: B023
             est = (args.checks + 1) * 2 / b
             print(
-                f"{f'{m}x{n}':>13s} {b:4d} {gemv.median_ms:8.4f} {alone.median_ms:8.4f}"
+                f"{f'{m}x{n}':>13s} {b:4d} {checker.segments:4d} {gemv.median_ms:8.4f}"
+                f" {alone.median_ms:8.4f}"
                 f" {both.median_ms:8.4f}"
                 f" {both.median_ms / gemv.median_ms - 1:9.1%} {est:12.1%} {alarms:12d}"
             )
