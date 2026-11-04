@@ -52,7 +52,11 @@ def test_legit_gpu_output_passes(block: int) -> None:
 
 
 def test_matches_fp64_reference() -> None:
-    """rho and tau agree with an FP64 numpy reference to within FP64 summation error."""
+    """rho matches an FP64 reference; tau is never below it (T3) and at most 0.1% above.
+
+    The kernel bounds a . |x| with round-up FP32 arithmetic, which is looser than exact by
+    at most about n * 2^-24 relative, and bounds |c| . |x| by (1 + u32) * a . |x|.
+    """
     _, x, Wt, xt = problem(m=256, n=1000, seed=1)
     checker = GpuBlockedChecker(
         Wt, 32, HEIGHT, checks=4, generator=torch.Generator().manual_seed(1)
@@ -65,13 +69,15 @@ def test_matches_fp64_reference() -> None:
     r = checker.r.cpu().numpy().astype(np.float64)
     x64, yb = x.astype(np.float64), y.cpu().numpy().astype(np.float64).reshape(-1, 32)
     rho = c @ x64 - np.einsum("kbi,bi->kb", r, yb)
-    eps = gamma(1000 + 32 + 1, U64) * (np.abs(c) @ np.abs(x64) + np.abs(yb).sum(1))
-    tau = (gamma(HEIGHT) + U32) * (a @ np.abs(x64)) + eps
+    s = a @ np.abs(x64)
+    eps = gamma(1000 + 32 + 1, U64) * ((1 + U32) * s + np.abs(yb).sum(1))
+    tau = (gamma(HEIGHT) + U32) * s + eps
+    rho_tol = gamma(1000 + 32 + 1, U64) * (np.abs(c) @ np.abs(x64) + np.abs(yb).sum(1))
 
-    np.testing.assert_allclose(res.rho.cpu().numpy(), rho, rtol=0, atol=2 * float(eps.max()))
+    np.testing.assert_allclose(res.rho.cpu().numpy(), rho, rtol=0, atol=2 * float(rho_tol.max()))
     tau_gpu = res.tau.cpu().numpy()
-    # Either side's FP64 sums over n terms are within ~n * 2^-53 of exact.
-    np.testing.assert_allclose(tau_gpu, tau, rtol=1e-12)
+    assert np.all(tau_gpu >= tau * (1 - 1e-12))  # reference sums are within ~n * 2^-53
+    assert np.all(tau_gpu <= tau * (1 + 1e-3))
 
 
 @pytest.mark.parametrize("exploit", ["skip_tail", "acc_bf16", "partial_bf16", "bf16_output"])
