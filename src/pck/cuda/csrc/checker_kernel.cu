@@ -5,15 +5,22 @@
 //   a[beta, :]    = sum_{i in beta} |W_i|       FP32, rounded UP
 //   r[k, beta, :] in {-1, +1}                   int8, secret
 // For every check k and row block beta, after the GEMV has finished:
-//   rho = c . x - r . y_beta                                          (FP64, nearest)
-//   tau = coef * (a . |x|) + geps * (|c| . |x| + sum |y_beta|)        (FP64, rounded up)
+//   rho = c . x - r . y_beta                       FP64, round to nearest
+//   s   = a . |x|                                  FP32, every operation rounded UP
+//   tau = coef * s + geps * ((1 + u32) * s + sum |y_beta|)    FP64, rounded UP
 // where coef >= gamma_h + u32 and geps >= gamma_{n+b+1}(u64) are rounded up on the host.
 // The block passes only if every y in it is finite and |rho| <= tau, so NaN/Inf always
 // raise the alarm.
 //
-// Products c_j * x_j and a_j * |x_j| (FP32 x BF16: 24 + 8 significand bits) are exact in
-// FP64. Sums for rho round to nearest (their error is what geps covers); sums for tau
-// round up, so tau is never below its exact value.
+// Why this is sound and cheap:
+//  * c_j * x_j (FP32 x BF16: 24 + 8 significand bits) is exact in FP64, so one FP64 FMA
+//    per element computes rho with only the summation rounding, which geps covers.
+//  * s is an upper bound on a . |x| because every FP32 operation rounds up; it is looser
+//    than exact by at most ~(n + 1) * 2^-24 relative.
+//  * The FP64 rounding of rho is at most gamma * (sum |c_j x_j| + sum |y|), and
+//    |c_j| <= (1 + u32) * a_j because |r^T W_j| <= sum |W_ij| and c is rounded to nearest.
+// Only one FP64 operation per weight column runs in the hot loop, which matters on GPUs
+// whose FP64 rate is 1/64 of FP32.
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -26,6 +33,7 @@ namespace {
 constexpr int kThreads = 256;
 constexpr int kWarp = 32;
 constexpr unsigned kFullMask = 0xffffffffu;
+constexpr double kOnePlusU32 = 1.0 + 0x1p-24;  // exact in FP64
 
 template <bool kRoundUp>
 __device__ __forceinline__ double add(double a, double b) {
@@ -76,21 +84,21 @@ __global__ void __launch_bounds__(kThreads)
   }
   __syncthreads();
 
-  double cx = 0.0, cabs = 0.0, s = 0.0;
+  double cx = 0.0;
+  float s = 0.0f;
   for (int64_t j = t; j < n; j += kThreads) {
-    const double xj = static_cast<double>(__bfloat162float(x[j]));
-    const double p = static_cast<double>(c_row[j]) * xj;  // exact
-    cx = __dadd_rn(cx, p);
-    cabs = __dadd_ru(cabs, fabs(p));
-    s = __dadd_ru(s, static_cast<double>(a_row[j]) * fabs(xj));  // exact product
+    const float xj = __bfloat162float(x[j]);
+    cx = __fma_rn(static_cast<double>(c_row[j]), static_cast<double>(xj), cx);  // exact product
+    s = __fadd_ru(s, __fmul_ru(a_row[j], fabsf(xj)));
   }
-  double ry = 0.0, yabs = 0.0;
+  double ry = 0.0;
+  float yabs = 0.0f;
   bool bad = false;
   for (int i = t; i < block; i += kThreads) {
-    const double yi = static_cast<double>(y_blk[i]);
+    const float yi = y_blk[i];
     bad |= !isfinite(yi);
-    ry = __dadd_rn(ry, r_row[i] > 0 ? yi : -yi);
-    yabs = __dadd_ru(yabs, fabs(yi));
+    ry = __dadd_rn(ry, static_cast<double>(r_row[i] > 0 ? yi : -yi));
+    yabs = __fadd_ru(yabs, fabsf(yi));
   }
   if (bad) {
     atomicOr(&nonfinite, 1);
@@ -98,13 +106,15 @@ __global__ void __launch_bounds__(kThreads)
 
   cx = block_sum<false>(cx, shared);
   ry = block_sum<false>(ry, shared);
-  cabs = block_sum<true>(cabs, shared);
-  yabs = block_sum<true>(yabs, shared);
-  s = block_sum<true>(s, shared);
+  // FP32 round-up partial sums are exact in FP64, and the FP64 tree also rounds up.
+  const double s_up = block_sum<true>(static_cast<double>(s), shared);
+  const double yabs_up = block_sum<true>(static_cast<double>(yabs), shared);
 
   if (t == 0) {
     const double rho = __dsub_rn(cx, ry);
-    const double tau = __dadd_ru(__dmul_ru(coef, s), __dmul_ru(geps, __dadd_ru(cabs, yabs)));
+    const double cabs_up = __dmul_ru(kOnePlusU32, s_up);
+    const double tau =
+        __dadd_ru(__dmul_ru(coef, s_up), __dmul_ru(geps, __dadd_ru(cabs_up, yabs_up)));
     passed[check_block] = nonfinite == 0 && fabs(rho) <= tau;  // NaN compares false
     rho_out[check_block] = rho;
     tau_out[check_block] = tau;
