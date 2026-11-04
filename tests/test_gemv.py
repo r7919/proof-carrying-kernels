@@ -6,8 +6,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pck.fp import gamma, tree_height
-from pck.gemv import abs_row_sums, emulate_gemv, reference_gemv
+from pck.fp import ceil_div, gamma, tree_height
+from pck.gemv import abs_row_sums, emulate_gemv, emulate_gemv_coalesced, reference_gemv
 from tests.strategies import Problem, gemv_problems
 
 
@@ -88,3 +88,80 @@ def test_rejects_bad_arguments(kwargs: dict[str, Any], match: str) -> None:
 def test_rejects_shape_mismatch() -> None:
     with pytest.raises(ValueError, match="shape"):
         emulate_gemv(np.ones((2, 8), np.float32), np.ones(7, np.float32), 4)
+
+
+def loop_reference_coalesced(W: np.ndarray, x: np.ndarray, threads: int, vec: int) -> np.ndarray:
+    """Thread-by-thread scalar model of the coalesced kernel, independent of reshapes."""
+    m, n = W.shape
+    per_thread = ceil_div(ceil_div(n, vec), threads)
+    y = np.empty(m, dtype=np.float32)
+    for i in range(m):
+        acc = []
+        for t in range(threads):
+            terms = [
+                np.float32(W[i, j] * x[j]) if j < n else np.float32(0)
+                for v in range(per_thread)
+                for j in range((v * threads + t) * vec, (v * threads + t + 1) * vec)
+            ]
+            s = terms[0]
+            for term in terms[1:]:
+                s = np.float32(s + term)
+            acc.append(s)
+        # Halving within each warp, then across warps.
+        warps = []
+        for w in range(threads // 32):
+            lanes = acc[32 * w : 32 * (w + 1)]
+            while len(lanes) > 1:
+                h = len(lanes) // 2
+                lanes = [np.float32(lanes[k] + lanes[k + h]) for k in range(h)]
+            warps.append(lanes[0])
+        while len(warps) > 1:
+            h = len(warps) // 2
+            warps = [np.float32(warps[k] + warps[k + h]) for k in range(h)]
+        y[i] = warps[0]
+    return y
+
+
+@given(
+    gemv_problems(max_rows=3, max_cols=150), st.sampled_from([32, 64]), st.sampled_from([1, 4, 8])
+)
+def test_coalesced_matches_loop_reference(p: Problem, threads: int, vec: int) -> None:
+    np.testing.assert_array_equal(
+        emulate_gemv_coalesced(p.W, p.x, threads, vec).view(np.uint32),
+        loop_reference_coalesced(p.W, p.x, threads, vec).view(np.uint32),
+    )
+
+
+@given(gemv_problems(), st.sampled_from([32, 64, 128, 256]), st.sampled_from([1, 2, 4, 8]))
+def test_coalesced_within_spec(p: Problem, threads: int, vec: int) -> None:
+    y = emulate_gemv_coalesced(p.W, p.x, threads, vec)
+    h = tree_height(p.x.size, threads, vec)
+    err = np.abs(y.astype(np.float64) - reference_gemv(p.W, p.x))
+    assert y.dtype == np.float32
+    assert np.all(err <= gamma(h) * abs_row_sums(p.W, p.x))
+
+
+def test_coalesced_exact_on_small_integers() -> None:
+    W = np.arange(3 * 300, dtype=np.float32).reshape(3, 300) % 7
+    x = (np.arange(300, dtype=np.float32) % 5) - 2
+    for threads in (32, 64, 256):
+        np.testing.assert_array_equal(emulate_gemv_coalesced(W, x, threads), W @ x)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"threads": 16}, ">= 32"),
+        ({"threads": 48}, "power of two"),
+        ({"threads": 32, "vec": 0}, "vec"),
+    ],
+)
+def test_coalesced_rejects_bad_arguments(kwargs: dict[str, Any], match: str) -> None:
+    W = np.ones((2, 8), dtype=np.float32)
+    with pytest.raises(ValueError, match=match):
+        emulate_gemv_coalesced(W, np.ones(8, dtype=np.float32), **kwargs)
+
+
+def test_coalesced_rejects_shape_mismatch() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        emulate_gemv_coalesced(np.ones((2, 8), np.float32), np.ones(7, np.float32), 32)
