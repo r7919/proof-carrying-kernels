@@ -115,3 +115,25 @@ def test_rejects_wrong_output_shape() -> None:
     checker = BlockedChecker(np.ones((8, 4)), np.ones(4), 4, 2)
     with pytest.raises(ValueError, match="shape"):
         checker.verdict(np.ones(7), np.random.default_rng(0))
+
+
+def test_crafted_output_passes_at_most_half_of_sign_draws() -> None:
+    """Empirical mirror of T4: an adversary that sees one sign vector cannot fool fresh ones.
+
+    One output is off by more than tau; the other outputs are shifted to cancel it exactly
+    under a guessed sign vector. With signs drawn after y is fixed, at most half the checks
+    pass (T4), so with K = 1 the pass rate must stay near or below 1/2.
+    """
+    rng = np.random.default_rng(5)
+    b, n = 8, 256
+    W = bf16(rng.standard_normal((b, n)) * 0.02)
+    x = bf16(rng.standard_normal(n))
+    checker = BlockedChecker(W, x, b, tree_height(n, 32))
+    y = emulate_gemv(W, x, 32).astype(np.float64)
+    big = 1.5 * checker.tau_base[0]
+    guess = rng.choice([-1.0, 1.0], b)
+    y[0] += big
+    y[1:] -= guess[0] * big * guess[1:] / (b - 1)  # cancels under the guessed signs
+    trials = 4000
+    passes = sum(bool(checker.verdict(y.astype(np.float32), rng)[0]) for _ in range(trials))
+    assert passes / trials <= 0.5 + 0.03
