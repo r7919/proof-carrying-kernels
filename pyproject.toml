@@ -62,18 +62,25 @@ python_version = "3.11"
 strict = true
 
 [[tool.mypy.overrides]]
+module = ["torch", "torch.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["tests.*", "harness.*"]
 disallow_untyped_decorators = false
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = ["gpu: needs the gpu extra; tests that run kernels also need a CUDA GPU"]
 xfail_strict = true
 filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["pck"]
 branch = true
+omit = ["*/pck/cuda/*"]  # GPU code is exercised by tests/gpu on a GPU machine, not in CI
 
 [tool.coverage.report]
 show_missing = true
