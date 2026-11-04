@@ -71,7 +71,7 @@ def test_matches_fp64_reference() -> None:
     x64, yb = x.astype(np.float64), y.cpu().numpy().astype(np.float64).reshape(-1, 32)
     rho = c @ x64 - np.einsum("kbi,bi->kb", r, yb)
     s = a @ np.abs(x64)
-    bound = checker.geps * ((1 + U32) * s + np.abs(yb).sum(1)) + checker.floor
+    bound = checker.geps * ((1 + U32) * s + np.abs(yb).sum(1)) + checker.tau_floor
     tau = (gamma(HEIGHT) + U32) * s + bound
     rho_tol = bound  # the kernel's own rounding of rho, which the threshold already covers
     assert np.all(np.abs(res.rho.cpu().numpy() - rho) <= 2 * rho_tol)

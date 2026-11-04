@@ -4,6 +4,8 @@
 #include <c10/cuda/CUDAStream.h>
 #include <torch/extension.h>
 
+#include "checker.h"
+
 #include <cstdint>
 #include <limits>
 #include <tuple>
@@ -14,11 +16,6 @@ cudaError_t gemv_bf16_naive(const void* W, const void* x, float* y, int64_t m, i
                             int threads, cudaStream_t stream);
 cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
                                 int threads, cudaStream_t stream);
-cudaError_t blocked_check(const float* c, const void* a, const int8_t* r, const void* x,
-                          const float* y, int64_t n, int block, int num_blocks, int checks,
-                          int segments, double coef, double geps, double floor,
-                          double* partial_cx, double* partial_s, unsigned int* counters,
-                          bool* passed, double* rho, double* tau, cudaStream_t stream);
 }  // namespace pck
 
 namespace {
@@ -68,17 +65,22 @@ void check_cuda(const torch::Tensor& t, const char* name, torch::ScalarType dtyp
   TORCH_CHECK(t.is_contiguous(), name, " must be contiguous");
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> blocked_check(
-    const torch::Tensor& c, const torch::Tensor& a, const torch::Tensor& r,
-    const torch::Tensor& x, const torch::Tensor& y, double coef, double geps, double floor,
-    torch::Tensor& partial_cx, torch::Tensor& partial_s, torch::Tensor& counters) {
-  TORCH_CHECK(y.is_cuda(), "y must be a CUDA tensor");
-  const auto device = y.device();
+using CheckOutputs = std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>;
+
+// Validates one check's tensors and fills its descriptor; returns its outputs.
+CheckOutputs describe(const torch::Tensor& c, const torch::Tensor& a, const torch::Tensor& r,
+                      const torch::Tensor& x, const torch::Tensor& y, torch::Tensor& partial_cx,
+                      torch::Tensor& partial_s, torch::Tensor& counters, double coef,
+                      double geps, double tau_floor, const torch::Device& device,
+                      pck::CheckDesc& d) {
   check_cuda(c, "c", torch::kFloat32, device);
   check_cuda(a, "a", torch::kBFloat16, device);
   check_cuda(r, "r", torch::kInt8, device);
   check_cuda(x, "x", torch::kBFloat16, device);
   check_cuda(y, "y", torch::kFloat32, device);
+  check_cuda(partial_cx, "partial_cx", torch::kFloat64, device);
+  check_cuda(partial_s, "partial_s", torch::kFloat64, device);
+  check_cuda(counters, "counters", torch::kInt32, device);
   TORCH_CHECK(c.dim() == 3 && a.dim() == 2 && r.dim() == 3 && x.dim() == 1 && y.dim() == 1,
               "expected c (K, nb, n), a (nb, n), r (K, nb, b), x (n,), y (m,)");
   const int64_t checks = c.size(0), num_blocks = c.size(1), n = c.size(2), block = r.size(2);
@@ -87,34 +89,80 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> blocked_check(
   TORCH_CHECK(x.size(0) == n, "x must have shape (n,)");
   TORCH_CHECK(y.size(0) == num_blocks * block, "y must have shape (nb * b,)");
   TORCH_CHECK(checks >= 1 && num_blocks >= 1 && n >= 1 && block >= 1, "empty checker");
-  TORCH_CHECK(checks * num_blocks <= std::numeric_limits<int32_t>::max(), "too many blocks");
-  TORCH_CHECK(coef > 0 && geps > 0 && floor > 0, "coef, geps and floor must be positive");
-  check_cuda(partial_cx, "partial_cx", torch::kFloat64, device);
-  check_cuda(partial_s, "partial_s", torch::kFloat64, device);
-  check_cuda(counters, "counters", torch::kInt32, device);
   TORCH_CHECK(partial_cx.dim() == 3 && partial_cx.size(0) == checks &&
                   partial_cx.size(1) == num_blocks && partial_s.sizes() == partial_cx.sizes(),
               "partial sums must have shape (K, nb, segments)");
   TORCH_CHECK(counters.dim() == 2 && counters.size(0) == checks && counters.size(1) == num_blocks,
               "counters must have shape (K, nb)");
   const int64_t segments = partial_cx.size(2);
-  TORCH_CHECK(segments >= 1 && segments <= 65535 && segments <= n,
-              "segments must be in [1, min(n, 65535)], got ", segments);
+  TORCH_CHECK(segments >= 1 && segments <= n, "segments must be in [1, n], got ", segments);
+  TORCH_CHECK(coef > 0 && geps > 0 && tau_floor > 0, "coef, geps and floor must be positive");
 
-  const c10::cuda::CUDAGuard guard(device);
   const auto shape = std::vector<int64_t>{checks, num_blocks};
   auto passed = torch::empty(shape, y.options().dtype(torch::kBool));
   auto rho = torch::empty(shape, y.options().dtype(torch::kFloat64));
   auto tau = torch::empty(shape, y.options().dtype(torch::kFloat64));
-  const cudaError_t err = pck::blocked_check(
-      c.data_ptr<float>(), a.data_ptr(), r.data_ptr<int8_t>(), x.data_ptr(),
-      y.data_ptr<float>(), n, static_cast<int>(block), static_cast<int>(num_blocks),
-      static_cast<int>(checks), static_cast<int>(segments), coef, geps, floor,
-      partial_cx.data_ptr<double>(), partial_s.data_ptr<double>(),
-      reinterpret_cast<unsigned int*>(counters.data_ptr<int32_t>()), passed.data_ptr<bool>(),
-      rho.data_ptr<double>(), tau.data_ptr<double>(), c10::cuda::getCurrentCUDAStream().stream());
-  TORCH_CHECK(err == cudaSuccess, "checker kernel launch failed: ", cudaGetErrorString(err));
+  d = pck::CheckDesc{c.data_ptr<float>(),
+                     a.data_ptr(),
+                     r.data_ptr<int8_t>(),
+                     x.data_ptr(),
+                     y.data_ptr<float>(),
+                     partial_cx.data_ptr<double>(),
+                     partial_s.data_ptr<double>(),
+                     reinterpret_cast<unsigned int*>(counters.data_ptr<int32_t>()),
+                     passed.data_ptr<bool>(),
+                     rho.data_ptr<double>(),
+                     tau.data_ptr<double>(),
+                     n,
+                     (n + segments - 1) / segments,
+                     static_cast<int>(block),
+                     static_cast<int>(num_blocks),
+                     static_cast<int>(checks),
+                     static_cast<int>(segments),
+                     coef,
+                     geps,
+                     tau_floor};
   return {passed, rho, tau};
+}
+
+// Checks up to kMaxBatch GEMV outputs in one launch; returns (passed, rho, tau) per check.
+std::vector<CheckOutputs> blocked_check(
+    const std::vector<torch::Tensor>& c, const std::vector<torch::Tensor>& a,
+    const std::vector<torch::Tensor>& r, const std::vector<torch::Tensor>& x,
+    const std::vector<torch::Tensor>& y, std::vector<torch::Tensor>& partial_cx,
+    std::vector<torch::Tensor>& partial_s, std::vector<torch::Tensor>& counters,
+    const std::vector<double>& coef, const std::vector<double>& geps,
+    const std::vector<double>& tau_floor) {
+  const size_t count = c.size();
+  TORCH_CHECK(count >= 1 && count <= static_cast<size_t>(pck::kMaxBatch),
+              "batch size must be in [1, ", pck::kMaxBatch, "], got ", count);
+  TORCH_CHECK(a.size() == count && r.size() == count && x.size() == count &&
+                  y.size() == count && partial_cx.size() == count &&
+                  partial_s.size() == count && counters.size() == count &&
+                  coef.size() == count && geps.size() == count && tau_floor.size() == count,
+              "all argument lists must have the same length");
+  TORCH_CHECK(y[0].is_cuda(), "y must be a CUDA tensor");
+  const auto device = y[0].device();
+  const c10::cuda::CUDAGuard guard(device);
+
+  pck::CheckBatch batch{};
+  batch.count = static_cast<int>(count);
+  std::vector<CheckOutputs> outputs;
+  outputs.reserve(count);
+  for (size_t g = 0; g < count; ++g) {
+    TORCH_CHECK(y[g].is_cuda(), "y must be a CUDA tensor");
+    outputs.push_back(describe(c[g], a[g], r[g], x[g], y[g], partial_cx[g], partial_s[g],
+                               counters[g], coef[g], geps[g], tau_floor[g], device,
+                               batch.desc[g]));
+    const auto& d = batch.desc[g];
+    batch.start[g + 1] =
+        batch.start[g] + static_cast<int64_t>(d.checks) * d.num_blocks * d.segments;
+  }
+  TORCH_CHECK(batch.start[count] <= std::numeric_limits<int32_t>::max(), "too many blocks");
+  const cudaError_t err =
+      pck::blocked_check(batch, c10::cuda::getCurrentCUDAStream().stream());
+  TORCH_CHECK(err == cudaSuccess, "checker kernel launch failed: ", cudaGetErrorString(err));
+  return outputs;
 }
 
 }  // namespace
@@ -126,8 +174,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         &gemv_coalesced, "Coalesced BF16 GEMV with 16-byte loads and warp-shuffle reduction",
         pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"));
   m.def("blocked_check", &blocked_check,
-        "Trusted blocked checksum checker; returns (passed, rho, tau), each (K, nb)",
+        "Trusted blocked checksum checker for up to 8 GEMV outputs in one launch; returns "
+        "(passed, rho, tau) per check, each of shape (K, nb)",
         pybind11::arg("c"), pybind11::arg("a"), pybind11::arg("r"), pybind11::arg("x"),
-        pybind11::arg("y"), pybind11::arg("coef"), pybind11::arg("geps"), pybind11::arg("floor"),
-        pybind11::arg("partial_cx"), pybind11::arg("partial_s"), pybind11::arg("counters"));
+        pybind11::arg("y"), pybind11::arg("partial_cx"), pybind11::arg("partial_s"),
+        pybind11::arg("counters"), pybind11::arg("coef"), pybind11::arg("geps"),
+        pybind11::arg("tau_floor"));
 }
