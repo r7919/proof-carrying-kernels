@@ -80,3 +80,15 @@ def test_column_template_rejects_rows_not_divisible_by_vec() -> None:
     x = torch.zeros(16, dtype=torch.bfloat16, device="cuda")
     with pytest.raises(RuntimeError, match="launch failed"):
         gemv_column(WT, x, ColumnConfig(vec=8))
+
+
+def test_column_template_merges_identically_on_repeated_calls() -> None:
+    rng = np.random.default_rng(1)
+    W = bf16(rng.standard_normal((1000, 4096)) * 0.02)
+    x = bf16(rng.standard_normal(4096))
+    WT, xc = to_cuda(np.ascontiguousarray(W.T)), to_cuda(x)
+    cfg = ColumnConfig(threads=256, vec=4, splits=64)
+    first = gemv_column(WT, xc, cfg)
+    for _ in range(5):  # the merge tickets must be back to zero after every call
+        assert torch.equal(gemv_column(WT, xc, cfg), first)
+    np.testing.assert_array_equal(first.cpu().numpy(), emulate_column(cfg, W, x))
