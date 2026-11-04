@@ -27,6 +27,7 @@ src/pck/        Python package: FP helpers, GEMV emulator, blocked checker, faul
 src/pck/cuda/   CUDA GEMV kernels and trusted checker (csrc/), PyTorch bindings, timing
 tests/          pytest + Hypothesis property tests (mirrors of theorems T1 and T2)
 tests/gpu/      kernel and checker tests on the GPU (need the gpu extra and a GPU)
+lean/           Lean 4 + Mathlib proofs of the checker's guarantees (T1-T4)
 harness/        experiments: numerics study, GEMV benchmark, checker overhead
 ```
 
@@ -55,8 +56,19 @@ uv run python harness/bench_gemv.py
 uv run python harness/bench_checker.py   # checker overhead by block size
 ```
 
-CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, and compiles the CUDA
-kernels for `sm_120`. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
+### Lean proofs
+
+```bash
+cd lean && lake exe cache get && lake build   # Mathlib cache, then the proofs
+lake env lean scripts/Axioms.lean              # fails on sorry or any non-standard axiom
+```
+
+Proven so far: `PCK.tree_sum_error`, the core of T1. For any binary summation tree t
+with height(t) * u < 1, |fl(t) - sum| <= gamma_height(t) * sum |x_i|, in the standard
+rounding model for addition (`PCK.AddModel`).
+
+CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, compiles the CUDA
+kernels for `sm_120`, and builds and axiom-audits the Lean proofs. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
 
 ## Numerics study
 
