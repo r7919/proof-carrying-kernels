@@ -121,10 +121,36 @@ def test_rejects_bad_inputs() -> None:
         check_topp_gpu(lg, sel, lengths, 0.0)
     with pytest.raises(ValueError, match="tol"):
         check_topp_gpu(lg, sel, lengths, 0.5, tol=-1.0)
-    with pytest.raises(RuntimeError, match="vocabulary too large"):
-        big = torch.zeros((1, 48 * 1024 * 8 + 1), device="cuda")
-        check_topk_gpu(big, torch.zeros((1, 1), dtype=torch.int64, device="cuda"), 1)
+    with pytest.raises(RuntimeError, match="segments"):
+        check_topk_gpu(lg, topk_sample(lg, 2)[0], 2, segments=11)
     with pytest.raises(RuntimeError, match="selected must be"):
         check_topk_gpu(lg, sel.int(), 1)
     with pytest.raises(ValueError, match="vocab % shards"):
         sharded_topk_gpu(lg, 2, shards=3, per_shard=1)
+
+
+@pytest.mark.parametrize("segments", [1, 2, 7, 38, 151_936])
+def test_segment_count_does_not_change_verdicts(segments: int) -> None:
+    lg = logits(4, 151_936, seed=21, scale=2.0)
+    selected, _ = topk_sample(lg, 30)
+    bad = selected.clone()
+    bad[1, 0] = selected[1, 1]  # duplicate in row 1
+    ref = check_topk_gpu(lg, bad, 30, segments=1)
+    got = check_topk_gpu(lg, bad, 30, segments=segments)
+    assert torch.equal(got.passed, ref.passed) and ref.passed.tolist() == [True, False, True, True]
+    assert torch.equal(got.min_selected, ref.min_selected)
+    assert torch.equal(got.max_rejected, ref.max_rejected)
+
+    nucleus, lengths = topp_select(lg, 0.9)
+    ref_p = check_topp_gpu(lg, nucleus, lengths, 0.9, tol=1e-5, segments=1)
+    got_p = check_topp_gpu(lg, nucleus, lengths, 0.9, tol=1e-5, segments=segments)
+    assert got_p.passed.all() and ref_p.passed.all()
+    torch.testing.assert_close(got_p.mass, ref_p.mass, rtol=1e-9, atol=0)  # order only
+
+
+def test_vocabulary_beyond_shared_memory_bitmap() -> None:
+    lg = logits(2, 500_000, seed=22)
+    selected, _ = topk_sample(lg, 64)
+    assert check_topk_gpu(lg, selected, 64).passed.all()
+    nucleus, lengths = topp_select(lg, 0.5)
+    assert check_topp_gpu(lg, nucleus, lengths, 0.5, tol=1e-5).passed.all()
