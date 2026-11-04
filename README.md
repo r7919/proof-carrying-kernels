@@ -78,6 +78,7 @@ Proven so far, in the standard rounding model for addition (`PCK.AddModel`), wit
 | `PCK.perturbed_tree_error`, `PCK.compound_error` | The checker's FP64 residual over compensated partials is within (gH + g2 + gH g2)(A + Y) + (1 + gH) eta of exact |
 | `PCK.t3_no_false_alarm` | **T3**: the check as computed (rounded residual, round-up threshold) passes whenever T1's bound holds |
 | `PCK.t3_single_fault_detected` | **T2 as computed**: one output off by more than 2 tau_hat always fails, for every sign vector |
+| `PCK.card_passing_mul_two_le`, `PCK.t4_computed` | **T4 (randomized detection)**: if any one output is off by more than tau_hat + E + u (a . \|x\|), whatever the other outputs (even crafted to cancel), the computed check passes for at most half of all sign vectors, and at most a 2^-K fraction of K independent ones. Counting proof over the sign cube |
 | `PCK.topK_check_iff_max_sum`, `PCK.prefix_iff_min_ge_max` | **Sampling**: the top-k check accepts exactly the k-sets of largest total logit (any tie-breaking), and the kernel's min >= max test decides the same thing |
 
 Assumed, not proven (stated as hypotheses where used): every operation satisfies the
