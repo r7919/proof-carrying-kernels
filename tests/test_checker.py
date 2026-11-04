@@ -6,7 +6,7 @@ from hypothesis import strategies as st
 from pck.checker import BlockedChecker
 from pck.faults import flip_bit
 from pck.fp import bf16, tree_height
-from pck.gemv import emulate_gemv
+from pck.gemv import emulate_gemv, emulate_gemv_coalesced
 from tests.strategies import Problem, gemv_problems
 
 BLOCK = 8
@@ -22,6 +22,18 @@ def test_no_false_alarms_on_legit_kernel(p: Problem, seed: int) -> None:
     y = emulate_gemv(p.W, p.x, p.threads)
     rng = np.random.default_rng(seed)
     assert make_checker(p).verdict(y, rng, checks=4).all()
+
+
+@given(
+    gemv_problems(row_multiple=BLOCK),
+    st.sampled_from([32, 128, 256]),
+    st.integers(0, 2**32 - 1),
+)
+def test_no_false_alarms_on_coalesced_kernel(p: Problem, threads: int, seed: int) -> None:
+    y = emulate_gemv_coalesced(p.W, p.x, threads)
+    h = tree_height(p.x.size, threads, vec=8)
+    checker = BlockedChecker(p.W, p.x, BLOCK, h)
+    assert checker.verdict(y, np.random.default_rng(seed), checks=4).all()
 
 
 @given(
