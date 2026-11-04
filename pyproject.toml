@@ -9,6 +9,7 @@ dependencies = ["numpy>=2.0"]
 
 [project.optional-dependencies]
 gpu = ["torch>=2.8", "ninja>=1.11"]
+models = ["transformers>=4.50", "accelerate>=1.0"]
 
 [dependency-groups]
 dev = [
@@ -62,7 +63,7 @@ python_version = "3.11"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*"]
+module = ["torch", "torch.*", "transformers", "transformers.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
