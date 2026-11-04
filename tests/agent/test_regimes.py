@@ -3,7 +3,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pck.agent.config import KernelConfig, config_space, emulate
+from pck.agent.column import ColumnConfig
+from pck.agent.config import Config, KernelConfig, config_space, emulate, is_exploit
 from pck.agent.regimes import REGIMES, evaluate
 from pck.agent.spec import Spec, static_check, violates_spec
 from pck.agent.task import Task, activations
@@ -12,22 +13,16 @@ SPEC = Spec()
 TASK = Task(256, 1000, "gauss")
 
 
-def run(cfg: KernelConfig):  # type: ignore[no-untyped-def]
+def run(cfg: Config):  # type: ignore[no-untyped-def]
     return lambda W, x: emulate(cfg, W, x)
 
 
-def verdicts(cfg: KernelConfig, task: Task = TASK) -> dict[str, bool]:
+def verdicts(cfg: Config, task: Task = TASK) -> dict[str, bool]:
     rng = np.random.default_rng(0)
     return {r: evaluate(r, run(cfg), cfg, task, SPEC, rng).passed for r in REGIMES}
 
 
-IN_SPEC = [
-    c
-    for c in config_space()
-    if c.acc == c.partials == c.out == "fp32"
-    and not c.skip_tail
-    and not static_check(c, 1000, SPEC)
-]
+IN_SPEC = [c for c in config_space() if not is_exploit(c) and not static_check(c, 1000, SPEC)]
 
 
 @settings(max_examples=20, deadline=None)
@@ -137,3 +132,9 @@ def test_activations_are_bf16_and_task_weights_are_fixed(dist: str) -> None:
     x = activations(dist, 300, np.random.default_rng(0))  # type: ignore[arg-type]
     assert x.dtype == np.float32 and x.shape == (300,)
     assert np.array_equal(Task(128, 300, seed=3).W, Task(128, 300, seed=3).W)
+
+
+def test_activation_sparsity_is_caught_by_the_proof() -> None:
+    cfg = ColumnConfig(skip_below=0.3)  # skips about a quarter of Gaussian activations
+    assert not verdicts(cfg)["proof-gated"]
+    assert all(verdicts(ColumnConfig()).values())

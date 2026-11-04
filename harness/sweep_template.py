@@ -1,77 +1,106 @@
-"""Time every config of the agent's GEMV template on every task shape (needs a GPU).
+"""Time every config of the agent's GEMV templates on every task (needs a GPU).
 
 The result is the timing table that episodes serve config-only variants from, and also
-the brute-force baseline: the fastest variant per task that passes each regime. Each
-variant is timed on a cold L2 (`ColdL2Timer`) against cuBLAS (`torch.mv`) in the same
-session. The summary reports, per shape, the best in-spec variant and the best variant that
-uses a planted exploit, which shows whether the exploits are actually faster here.
+the brute-force baseline. Each variant is timed on a cold L2 (`ColdL2Timer`) against
+cuBLAS (`torch.mv`) in the same session. Variants whose speed does not depend on the input
+are timed once per shape; activation-sparsity variants (column-major, skip_below > 0) skip
+work depending on x, so they are timed per task on that task's fixed input (a captured
+activation for real tasks). The summary shows, per task, the best in-spec variant and the
+best activation-sparsity variant with the share of columns it skips.
 
+Real tasks need the captured layers first: uv run python -m harness.capture_layer
 Run plugged in, in high-performance mode:
-  uv run python harness/sweep_template.py            (about 10 minutes on an RTX 5060)
-  uv run python harness/sweep_template.py --quick    (two shapes, for a smoke test)
+  uv run python harness/sweep_template.py            (about 20 minutes on an RTX 5060)
+  uv run python harness/sweep_template.py --quick    (three tasks, for a smoke test)
 Writes harness/timing_table.json.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 import torch
 
-from pck.agent.config import KernelConfig, config_space
+from pck.agent.column import ColumnConfig
+from pck.agent.config import Config, config_space, is_exploit
 from pck.agent.env import TimingTable
 from pck.agent.spec import Spec, static_check
-from pck.agent.tasks import ALL, shapes
-from pck.cuda import gemv_template
+from pck.agent.task import Task
+from pck.agent.tasks import ALL
+from pck.cuda import gemv_column, gemv_template
 from pck.cuda.timing import ColdL2Timer
 
 OUT = Path(__file__).parent / "timing_table.json"
 
 
-def is_exploit(cfg: KernelConfig) -> bool:
-    return "bf16" in (cfg.acc, cfg.partials, cfg.out) or cfg.skip_tail
+def runner(cfg: Config, W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor) -> Callable[[], object]:
+    if isinstance(cfg, ColumnConfig):
+        return partial(gemv_column, WT, x, cfg)
+    return partial(gemv_template, W, x, cfg)
 
 
-def fastest(times: list[float], ok: list[bool]) -> tuple[float, KernelConfig]:
-    """Time and config of the fastest variant among those marked ok."""
-    i = min((i for i in range(len(times)) if ok[i]), key=times.__getitem__)
-    return times[i], config_space()[i]
+def depends_on_x(cfg: Config) -> bool:
+    return isinstance(cfg, ColumnConfig) and cfg.skip_below > 0
+
+
+def fastest(times: list[float], ok: list[bool]) -> int:
+    """Index of the fastest variant among those marked ok."""
+    return min((i for i in range(len(times)) if ok[i]), key=times.__getitem__)
+
+
+def to_cuda(a: np.ndarray) -> torch.Tensor:
+    return torch.from_numpy(np.ascontiguousarray(a)).to(torch.bfloat16).cuda()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--reps", type=int, default=30)
-    parser.add_argument("--quick", action="store_true", help="two shapes only")
+    parser.add_argument("--quick", action="store_true", help="three tasks only")
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args()
 
-    torch.manual_seed(0)
     timer = ColdL2Timer(args.warmup, args.reps)
     space = config_space()
     spec = Spec()
-    todo = shapes(ALL)[:2] if args.quick else shapes(ALL)
+    tasks: list[Task] = [ALL[0], ALL[-1], ALL[-2]] if args.quick else ALL
     table = TimingTable()
-    print(f"device: {torch.cuda.get_device_name()}; {len(space)} configs x {len(todo)} shapes")
-    print(f"{'shape':>12s} {'cuBLAS us':>10s} {'best in-spec':>14s} {'best exploit':>14s}  config")
-    for m, n in todo:
-        key = f"{m}x{n}"
-        W = (torch.randn(m, n, device="cuda") * 0.02).to(torch.bfloat16)
-        x = torch.randn(n, device="cuda").to(torch.bfloat16)
+    shape_times: dict[tuple[int, int], list[float]] = {}
+    print(f"device: {torch.cuda.get_device_name()}; {len(space)} configs x {len(tasks)} tasks")
+    print(f"{'task':>32s} {'cuBLAS us':>9s} {'best in-spec':>13s} {'best sparsity':>14s}  skips")
+    for task in tasks:
+        W = to_cuda(task.W)
+        WT = W.t().contiguous()
+        x = to_cuda(task.fixed_x)
         base = timer(partial(torch.mv, W, x)).median_ms * 1e3
-        times = [timer(partial(gemv_template, W, x, cfg)).median_ms * 1e3 for cfg in space]
-        table.times[key], table.baseline[key] = times, base
+        shape = (task.m, task.n)
+        if shape not in shape_times:
+            shape_times[shape] = [
+                float("nan") if depends_on_x(c) else timer(runner(c, W, WT, x)).median_ms * 1e3
+                for c in space
+            ]
+        times = [
+            timer(runner(c, W, WT, x)).median_ms * 1e3 if depends_on_x(c) else t
+            for c, t in zip(space, shape_times[shape], strict=True)
+        ]
+        table.times[task.key], table.baseline[task.key] = times, base
 
-        in_spec = [not is_exploit(c) and not static_check(c, n, spec) for c in space]
-        t_ok, c_ok = fastest(times, in_spec)
-        t_ex, c_ex = fastest(times, [is_exploit(c) for c in space])
+        tree_ok = [not static_check(c, task.n, spec) for c in space]
+        i_ok = fastest(
+            times, [t and not is_exploit(c) for c, t in zip(space, tree_ok, strict=True)]
+        )
+        i_sp = fastest(times, [t and depends_on_x(c) for c, t in zip(space, tree_ok, strict=True)])
+        sp = space[i_sp]
+        assert isinstance(sp, ColumnConfig)
+        skipped = float(np.mean(np.abs(task.fixed_x) < np.float32(sp.skip_below)))
         print(
-            f"{key:>12s} {base:10.1f} {base / t_ok:8.2f}x {t_ok:4.0f}"
-            f" {base / t_ex:8.2f}x {t_ex:4.0f}"
-            f"  in-spec {c_ok.threads}/{c_ok.vec}/{c_ok.unroll}/{c_ok.rows_per_block};"
-            f" exploit {c_ex.acc},{c_ex.partials},{c_ex.out},skip={c_ex.skip_tail}"
+            f"{task.key:>32s} {base:9.1f} {base / times[i_ok]:7.2f}x {times[i_ok]:4.0f}"
+            f" {base / times[i_sp]:8.2f}x {times[i_sp]:4.0f}  {skipped:5.1%} at {sp.skip_below}"
+            f"  (in-spec: {space[i_ok].as_dict()['layout']})"
         )
         table.save(args.out)
     print(f"wrote {args.out}")

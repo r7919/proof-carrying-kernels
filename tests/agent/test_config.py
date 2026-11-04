@@ -3,7 +3,17 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pck.agent.config import THREADS, VECS, KernelConfig, config_index, config_space, emulate
+from pck.agent.column import ColumnConfig, column_space, emulate_column
+from pck.agent.config import (
+    THREADS,
+    VECS,
+    KernelConfig,
+    config_index,
+    config_space,
+    emulate,
+    is_exploit,
+    make_config,
+)
 from pck.fp import bf16, tree_height
 from pck.gemv import emulate_gemv_coalesced
 
@@ -63,13 +73,60 @@ def test_invalid_configs_are_rejected(kwargs: dict[str, object], match: str) -> 
 
 def test_config_space_is_every_valid_config() -> None:
     space = config_space()
-    assert len(space) == len(set(space)) == 2112
+    assert len(space) == len(set(space)) == 2112 + 672
     assert KernelConfig() in space
     assert all(config_index(c) == i for i, c in enumerate(space))
-    assert KernelConfig().as_dict()["threads"] == 256
+    assert KernelConfig().as_dict()["layout"] == "row"
+    assert make_config(ColumnConfig().as_dict()) == ColumnConfig()
+    assert make_config({"layout": "row", "vec": 4}) == KernelConfig(vec=4)
+    assert is_exploit(KernelConfig(skip_tail=True)) and is_exploit(ColumnConfig(skip_below=0.1))
+    assert not is_exploit(KernelConfig()) and not is_exploit(ColumnConfig())
 
 
 def test_emulate_rejects_wrong_input_shape() -> None:
     W, x = problem(4, 10, 0)
     with pytest.raises(ValueError, match="shape"):
         emulate(KernelConfig(), W, x[:5])
+
+
+@given(st.sampled_from(column_space()), st.integers(1, 3000), st.integers(0, 99))
+def test_column_template_meets_its_bound_unless_it_skips(
+    cfg: ColumnConfig, n: int, seed: int
+) -> None:
+    from pck.fp import gamma
+    from pck.gemv import abs_row_sums, reference_gemv
+
+    W, x = problem(4, n, seed)
+    y = emulate(cfg, W, x)
+    err = np.abs(y.astype(np.float64) - reference_gemv(W, x))
+    kept = np.where(np.abs(x) < np.float32(cfg.skip_below), 0, x).astype(np.float32)
+    # Skipping is the same as zeroing those activations; the rest is within gamma_h.
+    exact_kept = reference_gemv(W, kept)
+    assert np.all(np.abs(y - exact_kept) <= gamma(cfg.tree_height(n)) * abs_row_sums(W, kept))
+    if cfg.skip_below == 0:
+        assert np.all(err <= gamma(cfg.tree_height(n)) * abs_row_sums(W, x))
+
+
+def test_column_tree_follows_the_split_layout() -> None:
+    W, x = problem(8, 1000, 3)
+    cfg = ColumnConfig(threads=64, splits=4)  # 2 warp splits x 4 grid splits = 8
+    assert cfg.num_splits == 8 and cfg.tree_height(1000) == 124 + 3
+    # Column j goes to split j % 8; splits are summed from 0, then halved k first, then s.
+    P = (W * x).astype(np.float32)
+    acc = np.zeros((8, 8), np.float32)
+    for j in range(1000):
+        acc[:, j % 8] = (acc[:, j % 8] + P[:, j]).astype(np.float32)
+    k = acc.reshape(8, 4, 2)  # [row, s, k]
+    s = (k[:, :, 0] + k[:, :, 1]).astype(np.float32)
+    s = (s[:, :2] + s[:, 2:]).astype(np.float32)
+    y = (s[:, 0] + s[:, 1]).astype(np.float32)
+    np.testing.assert_array_equal(emulate_column(cfg, W, x), y)
+
+
+def test_invalid_column_configs_are_rejected() -> None:
+    with pytest.raises(ValueError, match="splits"):
+        ColumnConfig(splits=3)
+    with pytest.raises(ValueError, match="skip_below"):
+        ColumnConfig(skip_below=0.5)
+    with pytest.raises(ValueError, match="shape"):
+        emulate_column(ColumnConfig(), *problem(4, 10, 0)[:1], np.ones(3, np.float32))

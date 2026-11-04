@@ -22,7 +22,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.agent.config import KernelConfig, emulate
+from pck.agent.config import Config, KernelConfig, emulate
 from pck.agent.spec import Spec, static_check
 from pck.agent.task import Task, activations
 from pck.checker import BlockedChecker
@@ -80,7 +80,7 @@ def tuned_atol(task: Task, spec: Spec, calibration_inputs: int = 4) -> float:
 def evaluate(
     regime: RegimeName,
     kernel: Kernel,
-    cfg: KernelConfig,
+    cfg: Config,
     task: Task,
     spec: Spec,
     rng: np.random.Generator,
