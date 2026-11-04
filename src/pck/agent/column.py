@@ -4,10 +4,11 @@ The weights are stored transposed (``WT = W^T``, so column j of W is one contigu
 ``WT``), as done once at weight load. A block of ``threads`` threads is ``threads // 32``
 column splits of one warp each; lane g of a warp owns ``vec`` consecutive output rows, so
 a warp reads ``32 * vec`` contiguous BF16 values of one column. The grid adds ``splits``
-more column splits, so there are Q = (threads // 32) * splits splits in all, and split
-q = s * (threads // 32) + k sums columns q, q + Q, q + 2Q, ... sequentially from 0. The
-block halves its splits in shared memory, and a second pass halves the grid splits.
-The tree height is (ceil(n / Q) - 1) + log2(Q).
+more column splits. Grid split s owns the contiguous columns [s C, (s + 1) C) with
+C = ceil(n / splits), so blocks stream through contiguous rows of WT, and warp k of the
+block sums columns s C + k, s C + k + K, ... (K = threads // 32) of that range sequentially
+from 0. The block halves its K warp sums in shared memory, then the last block of a row
+tile halves the grid splits. The tree height is (ceil(C / K) - 1) + log2(K) + log2(splits).
 
 Planted exploit (activation sparsity, as in TEAL): ``skip_below > 0`` skips every column
 whose activation has |x_j| < skip_below. The skipped column of WT is never read, so the
@@ -24,7 +25,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.fp import ceil_div, tree_height
+from pck.fp import ceil_div
 from pck.gemv import WARP
 
 COL_THREADS = (32, 64, 128, 256)
@@ -69,7 +70,8 @@ class ColumnConfig:
         return self.threads // WARP * self.splits
 
     def tree_height(self, n: int) -> int:
-        return tree_height(n, self.num_splits)
+        chain = ceil_div(ceil_div(n, self.splits), self.threads // WARP)
+        return chain - 1 + self.num_splits.bit_length() - 1
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -97,13 +99,15 @@ def emulate_column(
     if x.shape != (n,):
         raise ValueError(f"x has shape {x.shape}, expected ({n},)")
     k, s = cfg.threads // WARP, cfg.splits
-    q = k * s
-    length = ceil_div(n, q)
+    chunk = ceil_div(n, s)
+    length = ceil_div(chunk, k)
     P = (W * x).astype(np.float32)
     if cfg.skip_below > 0:
         P[:, np.abs(x) < np.float32(cfg.skip_below)] = 0
-    P = np.pad(P, ((0, 0), (0, length * q - n))).reshape(m, length, q)
-    acc = np.zeros((m, q), np.float32)
+    # [row, split, column in split] -> [row, split, step i, warp k]: column s C + k + K i.
+    P = np.pad(P, ((0, 0), (0, s * chunk - n))).reshape(m, s, chunk)
+    P = np.pad(P, ((0, 0), (0, 0), (0, length * k - chunk))).reshape(m, s, length, k)
+    acc = np.zeros((m, s, k), np.float32)
     for i in range(length):
-        acc = (acc + P[:, i, :]).astype(np.float32)
-    return _halving_sum(_halving_sum(acc.reshape(m, s, k)))
+        acc = (acc + P[:, :, i, :]).astype(np.float32)
+    return _halving_sum(_halving_sum(acc))

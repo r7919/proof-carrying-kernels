@@ -109,15 +109,15 @@ def test_column_template_meets_its_bound_unless_it_skips(
 
 def test_column_tree_follows_the_split_layout() -> None:
     W, x = problem(8, 1000, 3)
-    cfg = ColumnConfig(threads=64, splits=4)  # 2 warp splits x 4 grid splits = 8
+    cfg = ColumnConfig(threads=64, splits=4)  # 2 warps x 4 grid splits of 250 columns
     assert cfg.num_splits == 8 and cfg.tree_height(1000) == 124 + 3
-    # Column j goes to split j % 8; splits are summed from 0, then halved k first, then s.
+    # Split s owns columns [250 s, 250 (s + 1)); warp k takes every other one of them.
     P = (W * x).astype(np.float32)
-    acc = np.zeros((8, 8), np.float32)
+    acc = np.zeros((8, 4, 2), np.float32)  # [row, s, k]
     for j in range(1000):
-        acc[:, j % 8] = (acc[:, j % 8] + P[:, j]).astype(np.float32)
-    k = acc.reshape(8, 4, 2)  # [row, s, k]
-    s = (k[:, :, 0] + k[:, :, 1]).astype(np.float32)
+        s_, k_ = j // 250, (j % 250) % 2
+        acc[:, s_, k_] = (acc[:, s_, k_] + P[:, j]).astype(np.float32)
+    s = (acc[:, :, 0] + acc[:, :, 1]).astype(np.float32)
     s = (s[:, :2] + s[:, 2:]).astype(np.float32)
     y = (s[:, 0] + s[:, 1]).astype(np.float32)
     np.testing.assert_array_equal(emulate_column(cfg, W, x), y)
