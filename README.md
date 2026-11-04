@@ -188,3 +188,25 @@ Cost next to the sampler being checked (RTX 5060, V = 151,936, k = 50, p = 0.9; 
 |---|---|---|---|---|
 | 1 | 386 us | 25 us | 256 us | 91 us |
 | 8 | 363 us | 36 us | 814 us | 311 us |
+
+## Tightness
+
+`harness/tightness.py` measures how far the proven thresholds sit above the actual error of
+the coalesced kernel (4096 x 4096, tree height 23; bit-exact CPU model; synthetic
+activations). Full output: `harness/tightness_out.txt`.
+
+| | Gaussian | Student-t | Outliers | Mixed-scale |
+|---|---|---|---|---|
+| Row bound / error, median (min) | 1118x (124x) | 853x (71x) | 194x (25x) | 252x (36x) |
+| Block tau / \|rho\|, b = 64, median (min) | 8118x (1479x) | 6131x (1370x) | 1558x (268x) | 1909x (476x) |
+| Block tau / \|rho\|, b = 128, median (min) | 11535x (2606x) | 9796x (1817x) | 2144x (560x) | 2977x (664x) |
+
+- The proven block threshold is much looser than V-ABFT's statistical 48-158x (BF16): rho
+  sums b row errors with random signs, which mostly cancel, while tau must cover the case
+  where they all add up. That is the price of never false-alarming.
+- The Higham-Mary probabilistic bound does not help here: at tree height 23 it is larger
+  than the proven gamma_h (1.70e-6 vs 1.37e-6). Its sqrt(h) advantage only matters for long
+  summation chains, which the tree-height bound already avoids.
+- A per-element tolerance calibrated on Gaussian activations (10x the largest error seen)
+  raises false alarms on 0.04% of outputs with outlier activations and 99.99% with
+  mixed-scale ones; the proven threshold raises none, since it scales with sum |W x|.
