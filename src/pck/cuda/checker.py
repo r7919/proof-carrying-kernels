@@ -1,9 +1,9 @@
 """Trusted blocked checksum checker on the GPU (production mode).
 
-The checksum bank (secret signs r, checksums c = r^T W_beta and a_beta = sum |W_i|) is
-built once at weight load by this trusted code. In production the fault model is
-non-adversarial, so a bank drawn ahead of time is fine; RL evaluation must instead draw
-the signs after the untrusted kernel has finished (commit-then-challenge).
+The checksum bank (secret signs r, FP32 checksums c = r^T W_beta, and a_beta = sum |W_i|
+rounded up to BF16) is built once at weight load by this trusted code. In production the
+fault model is non-adversarial, so a bank drawn ahead of time is fine; RL evaluation must
+instead draw the signs after the untrusted kernel has finished (commit-then-challenge).
 """
 
 from __future__ import annotations
@@ -19,6 +19,23 @@ from pck.fp import U32, U64, ceil_div, gamma
 KERNEL_THREADS = 256  # threads per block in checker_kernel.cu
 BLOCKS_PER_SM = 4
 MIN_SEGMENT_COLUMNS = 2 * KERNEL_THREADS
+
+
+def round_up_bf16(v: torch.Tensor) -> torch.Tensor:
+    """Round non-negative FP64 values to BF16 without ever rounding down.
+
+    Rounds up to FP32 first, then up to BF16 by carrying into the top 16 bits whenever
+    any of the low 16 bits are set. Values past the BF16 range become +Inf.
+    """
+    if v.dtype != torch.float64:
+        raise TypeError(f"round_up_bf16 expects float64, got {v.dtype}")
+    if bool((v < 0).any()):
+        raise ValueError("round_up_bf16 expects non-negative values")
+    f = v.float()
+    f = torch.where(f.double() < v, torch.nextafter(f, torch.full_like(f, math.inf)), f)
+    bits = f.view(torch.int32)
+    bits = torch.where((bits & 0xFFFF) != 0, (bits + 0x10000) & -0x10000, bits)
+    return bits.view(torch.float32).to(torch.bfloat16)  # exact: low 16 bits are zero
 
 
 def _next_up(v: float, steps: int = 1) -> float:
@@ -81,10 +98,9 @@ class GpuBlockedChecker:
             c[k] = torch.einsum("bi,bin->bn", self.r[k].double(), W64).float()
         self.c = c
 
-        a64 = W64.abs().sum(dim=1)
-        a32 = a64.float()
-        up = torch.nextafter(a32, torch.full_like(a32, math.inf))
-        self.a = torch.where(a32.double() < a64, up, a32)
+        self.a = round_up_bf16(W64.abs().sum(dim=1))
+        if not bool(torch.isfinite(self.a).all()):
+            raise ValueError("sum of |W| over a block overflows BF16")
 
         self.coef = _next_up(gamma(height) + U32, 2)
         self.geps = _next_up(gamma(n + block + 1, U64), 2)
