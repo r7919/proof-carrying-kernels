@@ -1,0 +1,50 @@
+
+=== x ~ gauss; m=4096, n=4100, L=17, T=256, tree height h=24 ===
+gamma_(n-1)=2.44e-04  gamma_h=1.43e-06  ratio=171x
+case                                 b=8 (K=8)      b=64 (K=8)     b=128 (K=8)    b=4096 (K=8)  atol=rtol=1e-2  spec viol.
+legit FP32 kernel                         pass            pass            pass            pass            pass          no
+skip_tail (drop 4)                      CAUGHT          CAUGHT          CAUGHT          CAUGHT          CAUGHT         yes
+BF16 accumulators                       CAUGHT          CAUGHT          CAUGHT          CAUGHT          CAUGHT         yes
+BF16 partials before tree               CAUGHT          CAUGHT          CAUGHT          CAUGHT            pass         yes
+BF16 output (downcast)                  CAUGHT          CAUGHT          CAUGHT            pass            pass         yes
+false alarms, legit kernel, b=64: 0 of 12800 block checks
+bit-flip detection at b=64 (fraction of 200 random rows):
+   bit       kind     K=1     K=4   naive 'rho>tau' test (K=1)
+    12   mantissa    0.0%    0.0%      0.0%
+    14   mantissa    0.0%    0.0%      0.0%
+    16   mantissa   41.0%   41.0%     41.0%
+    18   mantissa   79.0%   79.0%     79.0%
+    20   mantissa   93.5%   93.5%     93.5%
+    22   mantissa   99.5%   99.5%     99.5%
+    23   exponent   99.5%   99.5%     99.5%
+    27   exponent  100.0%  100.0%    100.0%
+    30   exponent  100.0%  100.0%     70.5%
+    31       sign  100.0%  100.0%    100.0%
+per-row tightness (gamma_h*s / actual err): median 1156x, min 181x
+b=64: single-output detection floor 2*tau/median|y| = 0.012; extra traffic (FP32 c per b BF16 rows) = 3.1%
+b=128: single-output detection floor 2*tau/median|y| = 0.023; extra traffic (FP32 c per b BF16 rows) = 1.6%
+
+=== x ~ student-t(3); m=4096, n=4100, L=17, T=256, tree height h=24 ===
+gamma_(n-1)=2.44e-04  gamma_h=1.43e-06  ratio=171x
+case                                 b=8 (K=8)      b=64 (K=8)     b=128 (K=8)    b=4096 (K=8)  atol=rtol=1e-2  spec viol.
+legit FP32 kernel                         pass            pass            pass            pass            pass          no
+skip_tail (drop 4)                      CAUGHT          CAUGHT          CAUGHT          CAUGHT          CAUGHT         yes
+BF16 accumulators                       CAUGHT          CAUGHT          CAUGHT          CAUGHT          CAUGHT         yes
+BF16 partials before tree               CAUGHT          CAUGHT          CAUGHT          CAUGHT          CAUGHT         yes
+BF16 output (downcast)                  CAUGHT          CAUGHT          CAUGHT            pass            pass         yes
+false alarms, legit kernel, b=64: 0 of 12800 block checks
+bit-flip detection at b=64 (fraction of 200 random rows):
+   bit       kind     K=1     K=4   naive 'rho>tau' test (K=1)
+    12   mantissa    0.0%    0.0%      0.0%
+    14   mantissa    6.5%    6.5%      6.5%
+    16   mantissa   64.0%   64.0%     64.0%
+    18   mantissa   91.0%   91.0%     91.0%
+    20   mantissa   97.0%   97.0%     97.0%
+    22   mantissa  100.0%  100.0%    100.0%
+    23   exponent  100.0%  100.0%    100.0%
+    27   exponent  100.0%  100.0%    100.0%
+    30   exponent  100.0%  100.0%     71.5%
+    31       sign  100.0%  100.0%    100.0%
+per-row tightness (gamma_h*s / actual err): median 966x, min 164x
+b=64: single-output detection floor 2*tau/median|y| = 0.010; extra traffic (FP32 c per b BF16 rows) = 3.1%
+b=128: single-output detection floor 2*tau/median|y| = 0.020; extra traffic (FP32 c per b BF16 rows) = 1.6%
