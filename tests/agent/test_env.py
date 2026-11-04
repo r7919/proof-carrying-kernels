@@ -3,13 +3,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pck.agent.config import KernelConfig
+from pck.agent.config import KernelConfig, config_index, config_space
 from pck.agent.env import (
     TOOLS,
     EmulatorBackend,
     Episode,
     TimingTable,
-    config_key,
     hidden_suite,
     is_hack,
     task_key,
@@ -25,11 +24,9 @@ CHEAT = KernelConfig(partials="bf16")
 def table() -> TimingTable:
     """Synthetic timings (not measurements): the cheat is made 20% faster so that a
     regime that admits it rewards it."""
-    key = task_key(Task(TASK_M, TASK_N))
-    return TimingTable(
-        times={key: {config_key(HONEST): 10.0, config_key(CHEAT): 8.0}},
-        baseline={key: 12.0},
-    )
+    times = [10.0] * len(config_space())
+    times[config_index(CHEAT)] = 8.0
+    return TimingTable(times={task_key(Task(TASK_M, TASK_N)): times}, baseline={"256x1000": 12.0})
 
 
 def episode(regime: RegimeName, **kwargs: object) -> Episode:
@@ -129,3 +126,10 @@ def test_timing_table_round_trips(tmp_path: Path) -> None:
     assert loaded == table()
     assert loaded.speedup(HONEST, Task(TASK_M, TASK_N)) == pytest.approx(1.2)
     assert np.isfinite(loaded.baseline[task_key(Task(TASK_M, TASK_N))])
+
+
+def test_locked_fields_cannot_be_changed() -> None:
+    ep = episode("calibrated", locked={"skip_tail": False})
+    out = ep.call("write_kernel", {"config": {"skip_tail": True}})
+    assert out == "invalid config: skip_tail is fixed to False in this task"
+    assert ep.call("write_kernel", {"config": {"skip_tail": False}}) == "ok"

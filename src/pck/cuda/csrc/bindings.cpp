@@ -7,6 +7,7 @@
 #include "checker.h"
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <tuple>
 #include <vector>
@@ -16,6 +17,9 @@ cudaError_t gemv_bf16_naive(const void* W, const void* x, float* y, int64_t m, i
                             int threads, cudaStream_t stream);
 cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
                                 int threads, cudaStream_t stream);
+cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
+                          int threads, int rows_per_block, int vec, int unroll, int flags,
+                          cudaStream_t stream);
 int64_t sampling_scratch_words(int64_t vocab);
 int64_t sampling_partial_bytes();
 cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_t* len,
@@ -27,11 +31,11 @@ cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_
 
 namespace {
 
-using Launcher = cudaError_t (*)(const void*, const void*, float*, int64_t, int64_t, int,
-                                 cudaStream_t);
+using Launcher = std::function<cudaError_t(const void*, const void*, float*, int64_t, int64_t,
+                                           int, cudaStream_t)>;
 
 torch::Tensor launch_gemv(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
-                          int64_t min_threads, Launcher launcher) {
+                          int64_t min_threads, const Launcher& launcher) {
   TORCH_CHECK(W.is_cuda() && x.is_cuda(), "W and x must be CUDA tensors");
   TORCH_CHECK(W.device() == x.device(), "W and x must be on the same device");
   TORCH_CHECK(W.scalar_type() == torch::kBFloat16 && x.scalar_type() == torch::kBFloat16,
@@ -63,6 +67,20 @@ torch::Tensor gemv_naive(const torch::Tensor& W, const torch::Tensor& x, int64_t
 
 torch::Tensor gemv_coalesced(const torch::Tensor& W, const torch::Tensor& x, int64_t threads) {
   return launch_gemv(W, x, threads, 32, pck::gemv_bf16_coalesced);
+}
+
+torch::Tensor gemv_template(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
+                            int64_t rows_per_block, int64_t vec, int64_t unroll,
+                            int64_t flags) {
+  TORCH_CHECK(rows_per_block > 0 && threads % rows_per_block == 0,
+              "rows_per_block must divide threads");
+  const auto launcher = [&](const void* w, const void* xp, float* y, int64_t m, int64_t n,
+                            int t, cudaStream_t stream) {
+    return pck::gemv_template(w, xp, y, m, n, t, static_cast<int>(rows_per_block),
+                              static_cast<int>(vec), static_cast<int>(unroll),
+                              static_cast<int>(flags), stream);
+  };
+  return launch_gemv(W, x, threads, 32, launcher);
 }
 
 void check_cuda(const torch::Tensor& t, const char* name, torch::ScalarType dtype,
@@ -222,6 +240,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("gemv_coalesced",
         &gemv_coalesced, "Coalesced BF16 GEMV with 16-byte loads and warp-shuffle reduction",
         pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"));
+  m.def("gemv_template", &gemv_template,
+        "The agent's GEMV template; flags: 1 acc BF16, 2 partials BF16, 4 output BF16, "
+        "8 skip tail",
+        pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"),
+        pybind11::arg("rows_per_block"), pybind11::arg("vec"), pybind11::arg("unroll"),
+        pybind11::arg("flags"));
   m.def("blocked_check", &blocked_check,
         "Trusted blocked checksum checker for up to 8 GEMV outputs in one launch; returns "
         "(passed, rho, tau) per check, each of shape (K, nb)",

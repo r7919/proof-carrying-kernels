@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 _CSRC = Path(__file__).parent / "csrc"
-SOURCES = ("bindings.cpp", "gemv_kernel.cu", "checker_kernel.cu", "sampling_kernel.cu")
+SOURCES = (
+    "bindings.cpp",
+    "gemv_kernel.cu",
+    "checker_kernel.cu",
+    "sampling_kernel.cu",
+    "template_kernel.cu",
+)
 
 
 @functools.cache

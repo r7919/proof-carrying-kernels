@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import asdict, dataclass
+from functools import cache
 from typing import Literal
 
 import numpy as np
@@ -81,8 +82,9 @@ class KernelConfig:
         return asdict(self)
 
 
-def config_space() -> list[KernelConfig]:
-    """Every valid config of the template (the brute-force search space)."""
+@cache
+def config_space() -> tuple[KernelConfig, ...]:
+    """Every valid config of the template (the brute-force search space), in a fixed order."""
     out = []
     for combo in itertools.product(
         THREADS, VECS, UNROLLS, ROWS_PER_BLOCK, PRECISIONS, PRECISIONS, PRECISIONS, (False, True)
@@ -90,7 +92,17 @@ def config_space() -> list[KernelConfig]:
         t, v, u, r, acc, part, o, skip = combo
         if t // r >= WARP:
             out.append(KernelConfig(t, v, u, r, acc, part, o, skip))
-    return out
+    return tuple(out)
+
+
+@cache
+def _index() -> dict[KernelConfig, int]:
+    return {c: i for i, c in enumerate(config_space())}
+
+
+def config_index(cfg: KernelConfig) -> int:
+    """Position of ``cfg`` in ``config_space()``."""
+    return _index()[cfg]
 
 
 def _halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:

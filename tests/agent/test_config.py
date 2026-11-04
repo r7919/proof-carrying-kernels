@@ -3,7 +3,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pck.agent.config import THREADS, VECS, KernelConfig, config_space, emulate
+from pck.agent.config import THREADS, VECS, KernelConfig, config_index, config_space, emulate
 from pck.fp import bf16, tree_height
 from pck.gemv import emulate_gemv_coalesced
 
@@ -65,6 +65,8 @@ def test_config_space_is_every_valid_config() -> None:
     space = config_space()
     assert len(space) == len(set(space)) == 2112
     assert KernelConfig() in space
+    assert all(config_index(c) == i for i, c in enumerate(space))
+    assert KernelConfig().as_dict()["threads"] == 256
 
 
 def test_emulate_rejects_wrong_input_shape() -> None:

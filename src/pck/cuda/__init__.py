@@ -8,7 +8,7 @@ from pck.cuda.checker import (
     SideStreamChecker,
     check_many,
 )
-from pck.cuda.gemv import gemv_coalesced, gemv_naive
+from pck.cuda.gemv import gemv_coalesced, gemv_naive, gemv_template
 from pck.cuda.sampling import (
     SamplingCheck,
     check_topk_gpu,
@@ -30,6 +30,7 @@ __all__ = [
     "check_topp_gpu",
     "gemv_coalesced",
     "gemv_naive",
+    "gemv_template",
     "sharded_topk_gpu",
     "topk_sample",
     "topp_select",
