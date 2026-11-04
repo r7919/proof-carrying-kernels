@@ -1,0 +1,17 @@
+# uv run python harness/bench_decode_layer.py [--block 128]
+# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04
+device: NVIDIA GeForce RTX 5060 Laptop GPU; fused layout (4 GEMVs); b = 64, K = 1; weights 416 MiB, checksum bank 19.5 MiB (4.7%)
+all checks pass on legit outputs: serial True, overlapped True, batched True
+          mode              ms [p10, p90]  overhead
+     gemv only   1.2554 [1.2535, 1.2587]      0.0%
+ serial checks   1.3593 [1.3557, 1.3633]      8.3%
+    overlapped   1.3761 [1.3603, 1.4170]      9.6%
+       batched   1.3321 [1.3287, 1.3351]      6.1%
+
+device: NVIDIA GeForce RTX 5060 Laptop GPU; fused layout (4 GEMVs); b = 128, K = 1; weights 416 MiB, checksum bank 9.8 MiB (2.3%)
+all checks pass on legit outputs: serial True, overlapped True, batched True
+          mode              ms [p10, p90]  overhead
+     gemv only   1.2555 [1.2531, 1.2582]      0.0%
+ serial checks   1.3259 [1.3231, 1.3295]      5.6%
+    overlapped   1.3720 [1.3608, 1.4050]      9.3%
+       batched   1.3041 [1.3018, 1.3067]      3.9%
