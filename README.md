@@ -11,7 +11,8 @@ spec, yet still catches low-precision shortcuts, dropped work and bit flips.
 
 ## Status
 
-Phase 1. The bit-faithful kernel model, checker and fault injector are in `src/pck/`,
+Phase 1 complete (GEMV kernels, GPU checker, overhead and false-alarm gates met); Phase 2
+(Lean proofs) next. The bit-faithful kernel model, checker and fault injector are in `src/pck/`,
 tested against the properties the Lean theorems will state. Two CUDA GEMV kernels are in
 `src/pck/cuda/`: a naive one and a coalesced one (16-byte loads, warp-shuffle reduction).
 Each matches its CPU model in `pck.gemv` bit for bit, so its summation tree, and therefore
@@ -103,3 +104,28 @@ Zero false alarms in every mode. At b = 128 the batched checker meets the Phase 
 under 5%. At b = 64 its memory traffic alone is 4.7%, and the single launch adds about
 1.4%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
 GPU, so the checker has nothing to overlap with and only adds cross-stream latency.
+
+## False alarms and bit-flip detection on the GPU
+
+`harness/campaign.py` on the RTX 5060; full output: `harness/campaign_out.txt`.
+
+**Zero false alarms in 40 million block checks**: 10^7 each for the coalesced and naive
+kernels at b = 64 and b = 128 (K = 8), over a fused Llama-3-8B decode layer with fresh
+Gaussian, Student-t, mixed-scale and outlier activations and periodically redrawn signs.
+The largest |rho| / tau any legit output reached was 5.5e-3, a margin of about 180x.
+
+Share of single bit flips detected (K = 1; 6,400-12,800 flips per cell):
+
+| Bit | b = 64 Gaussian | b = 64 outliers | b = 128 Gaussian | b = 128 outliers |
+|---|---|---|---|---|
+| mantissa 14 | 0.1% | 52.5% | 0.0% | 21.5% |
+| mantissa 16 | 44.1% | 87.3% | 11.7% | 75.2% |
+| mantissa 18 | 84.6% | 96.7% | 69.5% | 94.0% |
+| mantissa 20 | 96.3% | 99.2% | 92.3% | 98.2% |
+| mantissa 22 | 99.0% | 99.8% | 98.1% | 99.7% |
+| exponent 23-30, sign | 99.5-100% | 99.9-100% | 99.1-100% | 99.9-100% |
+
+These match the CPU simulation (`harness/sim_out.txt`). More sign vectors (K = 4) do not
+help single flips, as T2 predicts: a large single-output error is caught for every sign
+vector. The few exponent and sign flips that are missed hit outputs near zero, where the
+flip barely changes the value.
