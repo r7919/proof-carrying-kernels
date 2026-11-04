@@ -14,7 +14,11 @@ from dataclasses import dataclass
 import torch
 
 from pck.cuda._ext import extension
-from pck.fp import U32, U64, gamma
+from pck.fp import U32, U64, ceil_div, gamma
+
+KERNEL_THREADS = 256  # threads per block in checker_kernel.cu
+BLOCKS_PER_SM = 4
+MIN_SEGMENT_COLUMNS = 2 * KERNEL_THREADS
 
 
 def _next_up(v: float, steps: int = 1) -> float:
@@ -43,6 +47,10 @@ class GpuBlockedChecker:
     ``height`` is the summation-tree height of the kernel being checked, e.g.
     ``tree_height(n, threads, vec)``; the threshold is proven never to false-alarm for any
     FP32 kernel within that height.
+
+    ``segments`` splits each block's n columns across that many CUDA blocks so the grid
+    fills the GPU; by default about ``BLOCKS_PER_SM`` blocks per SM. A checker holds
+    per-call scratch space, so use it from one stream at a time.
     """
 
     def __init__(
@@ -52,6 +60,7 @@ class GpuBlockedChecker:
         height: int,
         checks: int = 1,
         generator: torch.Generator | None = None,
+        segments: int | None = None,
     ) -> None:
         if not (W.is_cuda and W.dtype == torch.bfloat16 and W.dim() == 2):
             raise ValueError("W must be a 2-D bfloat16 CUDA tensor")
@@ -80,10 +89,31 @@ class GpuBlockedChecker:
         self.coef = _next_up(gamma(height) + U32, 2)
         self.geps = _next_up(gamma(n + block + 1, U64), 2)
 
+        if segments is None:
+            sms = torch.cuda.get_device_properties(W.device).multi_processor_count
+            wanted = ceil_div(BLOCKS_PER_SM * sms, checks * self.num_blocks)
+            segments = max(1, min(wanted, n // MIN_SEGMENT_COLUMNS))
+        if not 1 <= segments <= min(n, 65535):
+            raise ValueError(f"segments must be in [1, {min(n, 65535)}], got {segments}")
+        self.segments = segments
+        scratch = (checks, self.num_blocks, segments)
+        self._partial_cx = torch.empty(scratch, dtype=torch.float64, device=W.device)
+        self._partial_s = torch.empty(scratch, dtype=torch.float64, device=W.device)
+        self._counters = torch.zeros((checks, self.num_blocks), dtype=torch.int32, device=W.device)
+
     def check(self, x: torch.Tensor, y: torch.Tensor) -> CheckResult:
         """Run every check on output ``y`` of the GEMV for input ``x``."""
         passed, rho, tau = extension().blocked_check(
-            self.c, self.a, self.r, x, y, self.coef, self.geps
+            self.c,
+            self.a,
+            self.r,
+            x,
+            y,
+            self.coef,
+            self.geps,
+            self._partial_cx,
+            self._partial_s,
+            self._counters,
         )
         return CheckResult(passed, rho, tau)
 

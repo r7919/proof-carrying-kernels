@@ -21,6 +21,13 @@
 //    |c_j| <= (1 + u32) * a_j because |r^T W_j| <= sum |W_ij| and c is rounded to nearest.
 // Only one FP64 operation per weight column runs in the hot loop, which matters on GPUs
 // whose FP64 rate is 1/64 of FP32.
+//
+// Parallelism: the n columns of every (check, block) pair are split into `segments`
+// CUDA blocks so the grid fills the GPU even when there are few row blocks. Each writes
+// partial sums; the last to finish (atomic ticket) adds them in a fixed order, handles the
+// y terms and writes the verdict. The error bounds hold for any summation order. The
+// counters are reset to zero by the last block, so a checker must not be used from two
+// streams at once.
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -66,31 +73,54 @@ __device__ double block_sum(double v, double* shared) {
 __global__ void __launch_bounds__(kThreads)
     blocked_check_kernel(const float* __restrict__ c, const float* __restrict__ a,
                          const int8_t* __restrict__ r, const __nv_bfloat16* __restrict__ x,
-                         const float* __restrict__ y, int64_t n, int block, int num_blocks,
-                         double coef, double geps, bool* __restrict__ passed,
+                         const float* __restrict__ y, int64_t n, int64_t seg_len, int block,
+                         int num_blocks, double coef, double geps, double* partial_cx,
+                         double* partial_s, unsigned int* counters, bool* __restrict__ passed,
                          double* __restrict__ rho_out, double* __restrict__ tau_out) {
   __shared__ double shared[kWarp];
   __shared__ int nonfinite;
+  __shared__ bool is_last;
   const int t = static_cast<int>(threadIdx.x);
   const int64_t check_block = blockIdx.x;  // = k * num_blocks + beta
+  const int64_t segments = gridDim.y;
+  const int64_t seg = blockIdx.y;
   const int64_t beta = check_block % num_blocks;
   const float* c_row = c + check_block * n;
   const float* a_row = a + beta * n;
-  const int8_t* r_row = r + check_block * block;
-  const float* y_blk = y + beta * block;
 
   if (t == 0) {
     nonfinite = 0;
   }
   __syncthreads();
 
+  // Phase 1 (every segment): partial c . x and a . |x| over this segment's columns.
+  const int64_t j_end = min(n, (seg + 1) * seg_len);
   double cx = 0.0;
   float s = 0.0f;
-  for (int64_t j = t; j < n; j += kThreads) {
+#pragma unroll 4
+  for (int64_t j = seg * seg_len + t; j < j_end; j += kThreads) {
     const float xj = __bfloat162float(x[j]);
     cx = __fma_rn(static_cast<double>(c_row[j]), static_cast<double>(xj), cx);  // exact product
     s = __fadd_ru(s, __fmul_ru(a_row[j], fabsf(xj)));
   }
+  cx = block_sum<false>(cx, shared);
+  // FP32 round-up partial sums are exact in FP64, and the FP64 tree also rounds up.
+  const double s_up = block_sum<true>(static_cast<double>(s), shared);
+  if (t == 0) {
+    partial_cx[check_block * segments + seg] = cx;
+    partial_s[check_block * segments + seg] = s_up;
+    __threadfence();  // publish partials before taking a ticket
+    is_last = atomicAdd(&counters[check_block], 1u) == segments - 1;
+  }
+  __syncthreads();
+  if (!is_last) {
+    return;
+  }
+
+  // Phase 2 (last segment to finish): the y terms, then combine and decide.
+  __threadfence();
+  const int8_t* r_row = r + check_block * block;
+  const float* y_blk = y + beta * block;
   double ry = 0.0;
   float yabs = 0.0f;
   bool bad = false;
@@ -103,18 +133,24 @@ __global__ void __launch_bounds__(kThreads)
   if (bad) {
     atomicOr(&nonfinite, 1);
   }
-
-  cx = block_sum<false>(cx, shared);
   ry = block_sum<false>(ry, shared);
-  // FP32 round-up partial sums are exact in FP64, and the FP64 tree also rounds up.
-  const double s_up = block_sum<true>(static_cast<double>(s), shared);
   const double yabs_up = block_sum<true>(static_cast<double>(yabs), shared);
 
   if (t == 0) {
-    const double rho = __dsub_rn(cx, ry);
-    const double cabs_up = __dmul_ru(kOnePlusU32, s_up);
+    const volatile double* pcx = partial_cx + check_block * segments;
+    const volatile double* ps = partial_s + check_block * segments;
+    double cx_total = 0.0;
+    double s_total = 0.0;
+    for (int64_t i = 0; i < segments; ++i) {  // fixed order: deterministic result
+      cx_total = __dadd_rn(cx_total, pcx[i]);
+      s_total = __dadd_ru(s_total, ps[i]);
+    }
+    counters[check_block] = 0;  // ready for the next call
+
+    const double rho = __dsub_rn(cx_total, ry);
+    const double cabs_up = __dmul_ru(kOnePlusU32, s_total);
     const double tau =
-        __dadd_ru(__dmul_ru(coef, s_up), __dmul_ru(geps, __dadd_ru(cabs_up, yabs_up)));
+        __dadd_ru(__dmul_ru(coef, s_total), __dmul_ru(geps, __dadd_ru(cabs_up, yabs_up)));
     passed[check_block] = nonfinite == 0 && fabs(rho) <= tau;  // NaN compares false
     rho_out[check_block] = rho;
     tau_out[check_block] = tau;
@@ -125,12 +161,15 @@ __global__ void __launch_bounds__(kThreads)
 
 cudaError_t blocked_check(const float* c, const float* a, const int8_t* r, const void* x,
                           const float* y, int64_t n, int block, int num_blocks, int checks,
-                          double coef, double geps, bool* passed, double* rho, double* tau,
-                          cudaStream_t stream) {
-  const unsigned int grid = static_cast<unsigned int>(checks) * num_blocks;
+                          int segments, double coef, double geps, double* partial_cx,
+                          double* partial_s, unsigned int* counters, bool* passed, double* rho,
+                          double* tau, cudaStream_t stream) {
+  const int64_t seg_len = (n + segments - 1) / segments;
+  const dim3 grid(static_cast<unsigned int>(checks) * num_blocks,
+                  static_cast<unsigned int>(segments));
   blocked_check_kernel<<<grid, kThreads, 0, stream>>>(
-      c, a, r, static_cast<const __nv_bfloat16*>(x), y, n, block, num_blocks, coef, geps, passed,
-      rho, tau);
+      c, a, r, static_cast<const __nv_bfloat16*>(x), y, n, seg_len, block, num_blocks, coef,
+      geps, partial_cx, partial_s, counters, passed, rho, tau);
   return cudaGetLastError();
 }
 
