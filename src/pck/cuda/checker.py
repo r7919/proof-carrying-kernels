@@ -9,6 +9,7 @@ instead draw the signs after the untrusted kernel has finished (commit-then-chal
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
@@ -114,7 +115,7 @@ class GpuBlockedChecker:
         # Terms per thread chain in the compensated FP32 dot product (Dot2): L.
         chain = ceil_div(ceil_div(n, segments), KERNEL_THREADS)
         self.geps = _next_up(gamma(n + block + 1, U64) + gamma(2 * chain, U32) ** 2, 4)
-        self.floor = _next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
+        self.tau_floor = _next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
         scratch = (checks, self.num_blocks, segments)
         self._partial_cx = torch.empty(scratch, dtype=torch.float64, device=W.device)
         self._partial_s = torch.empty(scratch, dtype=torch.float64, device=W.device)
@@ -122,24 +123,45 @@ class GpuBlockedChecker:
 
     def check(self, x: torch.Tensor, y: torch.Tensor) -> CheckResult:
         """Run every check on output ``y`` of the GEMV for input ``x``."""
-        passed, rho, tau = extension().blocked_check(
-            self.c,
-            self.a,
-            self.r,
-            x,
-            y,
-            self.coef,
-            self.geps,
-            self.floor,
-            self._partial_cx,
-            self._partial_s,
-            self._counters,
-        )
-        return CheckResult(passed, rho, tau)
+        return check_many([(self, x, y)])[0]
 
     def verdict(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Per-block pass/fail (True = passed every check)."""
         return self.check(x, y).verdict
+
+
+MAX_BATCH = 8  # kMaxBatch in checker.h
+
+
+def check_many(
+    items: Sequence[tuple[GpuBlockedChecker, torch.Tensor, torch.Tensor]],
+) -> list[CheckResult]:
+    """Check several GEMV outputs, ``(checker, x, y)`` each, in as few launches as possible.
+
+    Up to ``MAX_BATCH`` checks share one kernel launch, so checking every GEMV of a layer
+    together pays the fixed launch cost once. Each checker may appear only once per call,
+    since a launch uses its scratch space.
+    """
+    if len({id(checker) for checker, _, _ in items}) != len(items):
+        raise ValueError("each checker may appear only once per call")
+    results: list[CheckResult] = []
+    for i in range(0, len(items), MAX_BATCH):
+        chunk = items[i : i + MAX_BATCH]
+        outputs = extension().blocked_check(
+            [ch.c for ch, _, _ in chunk],
+            [ch.a for ch, _, _ in chunk],
+            [ch.r for ch, _, _ in chunk],
+            [x for _, x, _ in chunk],
+            [y for _, _, y in chunk],
+            [ch._partial_cx for ch, _, _ in chunk],
+            [ch._partial_s for ch, _, _ in chunk],
+            [ch._counters for ch, _, _ in chunk],
+            [ch.coef for ch, _, _ in chunk],
+            [ch.geps for ch, _, _ in chunk],
+            [ch.tau_floor for ch, _, _ in chunk],
+        )
+        results.extend(CheckResult(passed, rho, tau) for passed, rho, tau in outputs)
+    return results
 
 
 class PendingCheck:
