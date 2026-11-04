@@ -89,7 +89,7 @@ class TimingTable:
             task[key] = [round(t, 2) for t, d in zip(times, dep, strict=True) if d]
         base = {k: round(t, 2) for k, t in self.baseline.items()}
         data = {"shape": shape, "task": task, "baseline": base}
-        path.write_text(json.dumps(data, separators=(",", ":")))
+        path.write_text(json.dumps(data, separators=(",", ":")) + "\n")
 
     @classmethod
     def load(cls, path: Path) -> TimingTable:
