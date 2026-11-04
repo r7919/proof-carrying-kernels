@@ -20,9 +20,10 @@ cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t 
 cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
                           int threads, int rows_per_block, int vec, int unroll, int flags,
                           cudaStream_t stream);
-cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch, int64_t m,
-                        int64_t n, int threads, int vec, int splits, float skip_below,
-                        cudaStream_t stream);
+int64_t column_tiles(int64_t m, int vec);
+cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch,
+                        unsigned* tickets, int64_t m, int64_t n, int threads, int vec,
+                        int splits, float skip_below, cudaStream_t stream);
 int64_t sampling_scratch_words(int64_t vocab);
 int64_t sampling_partial_bytes();
 cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_t* len,
@@ -86,8 +87,9 @@ torch::Tensor gemv_template(const torch::Tensor& W, const torch::Tensor& x, int6
   return launch_gemv(W, x, threads, 32, launcher);
 }
 
-torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x, int64_t threads,
-                          int64_t vec, int64_t splits, double skip_below) {
+torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x,
+                          torch::Tensor& tickets, int64_t threads, int64_t vec, int64_t splits,
+                          double skip_below) {
   TORCH_CHECK(WT.is_cuda() && x.is_cuda() && WT.device() == x.device(),
               "WT and x must be CUDA tensors on one device");
   TORCH_CHECK(WT.scalar_type() == torch::kBFloat16 && x.scalar_type() == torch::kBFloat16,
@@ -100,8 +102,13 @@ torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x, int64
   auto y = torch::empty({m}, WT.options().dtype(torch::kFloat32));
   auto scratch = torch::empty({splits > 1 ? splits * m : 0}, y.options());
   if (m == 0) return y;
+  TORCH_CHECK(vec > 0 && tickets.is_cuda() && tickets.device() == WT.device() &&
+                  tickets.scalar_type() == torch::kInt32 && tickets.is_contiguous() &&
+                  tickets.numel() >= pck::column_tiles(m, static_cast<int>(vec)),
+              "tickets must be a zeroed int32 CUDA tensor with at least one entry per tile");
   const cudaError_t err = pck::gemv_column(
-      WT.data_ptr(), x.data_ptr(), y.data_ptr<float>(), scratch.data_ptr<float>(), m, n,
+      WT.data_ptr(), x.data_ptr(), y.data_ptr<float>(), scratch.data_ptr<float>(),
+      reinterpret_cast<unsigned*>(tickets.data_ptr<int32_t>()), m, n,
       static_cast<int>(threads), static_cast<int>(vec), static_cast<int>(splits),
       static_cast<float>(skip_below), c10::cuda::getCurrentCUDAStream().stream());
   TORCH_CHECK(err == cudaSuccess, "column gemv launch failed: ", cudaGetErrorString(err));
@@ -273,8 +280,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("flags"));
   m.def("gemv_column", &gemv_column,
         "The agent's column-major GEMV template over WT = W^T (n, m)", pybind11::arg("WT"),
-        pybind11::arg("x"), pybind11::arg("threads"), pybind11::arg("vec"),
-        pybind11::arg("splits"), pybind11::arg("skip_below"));
+        pybind11::arg("x"), pybind11::arg("tickets"), pybind11::arg("threads"),
+        pybind11::arg("vec"), pybind11::arg("splits"), pybind11::arg("skip_below"));
   m.def("blocked_check", &blocked_check,
         "Trusted blocked checksum checker for up to 8 GEMV outputs in one launch; returns "
         "(passed, rho, tau) per check, each of shape (K, nb)",

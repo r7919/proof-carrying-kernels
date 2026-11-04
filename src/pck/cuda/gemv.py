@@ -54,12 +54,26 @@ def gemv_template(W: torch.Tensor, x: torch.Tensor, cfg: KernelConfig) -> torch.
     return y
 
 
+_TICKETS: dict[torch.device, torch.Tensor] = {}
+
+
+def _tickets(device: torch.device, count: int) -> torch.Tensor:
+    """Zeroed merge tickets, reused across calls (the kernel leaves them zero)."""
+    t = _TICKETS.get(device)
+    if t is None or t.numel() < count:
+        t = torch.zeros(max(count, 1024), dtype=torch.int32, device=device)
+        _TICKETS[device] = t
+    return t
+
+
 def gemv_column(WT: torch.Tensor, x: torch.Tensor, cfg: ColumnConfig) -> torch.Tensor:
     """y = W x with the column-major template, from ``WT = W.t().contiguous()``.
 
-    Matches :func:`pck.agent.column.emulate_column` bit for bit.
+    Matches :func:`pck.agent.column.emulate_column` bit for bit. Calls on one device must
+    not overlap (they share the merge tickets), so use a single stream.
     """
+    tiles = -(-WT.shape[1] // (32 * cfg.vec))
     y: torch.Tensor = extension().gemv_column(
-        WT, x, cfg.threads, cfg.vec, cfg.splits, cfg.skip_below
+        WT, x, _tickets(WT.device, tiles), cfg.threads, cfg.vec, cfg.splits, cfg.skip_below
     )
     return y
