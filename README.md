@@ -170,3 +170,20 @@ These match the CPU simulation (`harness/sim_out.txt`). More sign vectors (K = 4
 help single flips, as T2 predicts: a large single-output error is caught for every sign
 vector. The few exponent and sign flips that are missed hit outputs near zero, where the
 flip barely changes the value.
+
+## Sampling checker
+
+`pck.sampling` (CPU) and `pck.cuda.check_topk_gpu` / `check_topp_gpu` (GPU) check a
+sampler's output in O(vocabulary): top-k by exact comparison (every selected logit >= every
+rejected one, k distinct in-range indices, no NaN), top-p by the same prefix property plus
+minimality of the nucleus with FP64 masses and an explicit tolerance, and that the sampled
+token is in the set. The fault model `sharded_topk` reproduces the approximate-top-k bug
+class (top logits clustered in one shard are dropped); the checker catches every wrong set.
+
+Cost next to the sampler being checked (RTX 5060, V = 151,936, k = 50, p = 0.9; full output:
+`harness/bench_sampling_out.txt`):
+
+| Batch | top-k sampler | top-k checker | top-p selection | top-p checker |
+|---|---|---|---|---|
+| 1 | 386 us | 25 us | 256 us | 91 us |
+| 8 | 363 us | 36 us | 814 us | 311 us |
