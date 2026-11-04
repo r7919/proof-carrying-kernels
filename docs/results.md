@@ -13,6 +13,7 @@ produced it and the file with its full output, so every number here can be repro
 | Sampling checker cost | `harness/bench_sampling.py` | `harness/bench_sampling_out.txt` |
 | Tightness, synthetic activations (CPU) | `harness/tightness.py` | `harness/tightness_out.txt` |
 | Tightness, real activations | `python -m harness.real_activations` | `harness/real_activations_out.txt` |
+| Agent template sweep | `harness/sweep_template.py` | `harness/sweep_template_out.txt`, `harness/timing_table.json` |
 
 ## Measurements
 
@@ -183,3 +184,23 @@ the largest honest error) and applied to the other three. Share of decode inputs
   (the checker costs 3.9% of a decode layer), and its tolerance has no guarantee outside
   the inputs it was calibrated on. The checker's threshold holds for every input and every
   kernel within the declared tree height.
+
+### Agent template sweep
+
+`harness/sweep_template.py` times all 2,112 configs of the agent's GEMV template
+(`src/pck/agent/config.py`) on the 15 task shapes, against cuBLAS in the same session. The
+table it writes serves every episode's timings and is the brute-force baseline. Full
+output: `harness/sweep_template_out.txt`.
+
+- **In-spec variants beat cuBLAS on every shape**, by 1.05-1.07x on the large MLP shapes
+  (bandwidth-bound for both) up to 2-3x on small ones, where cuBLAS's launch configuration
+  leaves the GPU underused.
+- **The precision exploits are not faster.** BF16 accumulators, partials or output give no
+  speedup over the best in-spec variant on any shape (14336 x 4096: 1.05x either way);
+  rounding to BF16 adds instructions and saves no memory traffic in a bandwidth-bound
+  kernel. Every exploit speedup in the table comes from `skip_tail`, i.e. from not reading
+  part of `W`.
+- So under the current template, a policy has no speed incentive to use a precision
+  shortcut, and the one exploit that pays (dropping work) is locked in training. The
+  calibrated-vs-proof-gated comparison needs an exploit that is both faster and passes
+  `atol = rtol = 1e-2`.
