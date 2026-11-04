@@ -1,41 +1,59 @@
 # uv run python -m harness.real_activations   (download progress lines removed)
-# RTX 5060 Laptop GPU (WSL2), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2026-11-04
+# CPU (cloud container, no GPU), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2 inputs per layer and prompt, 2026-11-04
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 226/290 [00:00<00:00, 2253.10it/s]Loading weights: 100%|██████████| 290/290 [00:00<00:00, 2494.60it/s]
 model: Qwen/Qwen2.5-0.5B-Instruct; decode-step inputs, batch 1; coalesced kernel (256 threads)
 
 Per-row tightness, proven bound / actual error
-   down_proj: median      1059x   p1       220x   min        39x
-   gate_proj: median       293x   p1        53x   min        10x
-      k_proj: median       251x   p1        43x   min        18x
-      o_proj: median       348x   p1        65x   min        15x
-      q_proj: median       293x   p1        50x   min        13x
-     up_proj: median       372x   p1        74x   min        15x
-      v_proj: median       311x   p1        56x   min        26x
+   down_proj: median      1052x   p1       219x   min        27x
+   gate_proj: median       301x   p1        56x   min        14x
+      k_proj: median       247x   p1        43x   min        21x
+      o_proj: median       348x   p1        66x   min        12x
+      q_proj: median       287x   p1        50x   min        13x
+     up_proj: median       375x   p1        74x   min        14x
+      v_proj: median       312x   p1        56x   min        20x
 
 Per-block tightness, tau / |rho|, b = 64
-   down_proj: median      8053x   p1      1755x   min       661x
-   gate_proj: median      1982x   p1       501x   min       271x
-      k_proj: median      1554x   p1       395x   min       306x
-      o_proj: median      2406x   p1       491x   min       242x
-      q_proj: median      2057x   p1       436x   min       223x
-     up_proj: median      2847x   p1       739x   min       379x
-      v_proj: median      2266x   p1       588x   min       363x
+   down_proj: median      7835x   p1      1766x   min       282x
+   gate_proj: median      2076x   p1       521x   min       306x
+      k_proj: median      1645x   p1       341x   min       247x
+      o_proj: median      2346x   p1       536x   min       213x
+      q_proj: median      2017x   p1       412x   min       233x
+     up_proj: median      2822x   p1       715x   min       459x
+      v_proj: median      2147x   p1       599x   min       289x
 
 Per-block tightness, tau / |rho|, b = 128
-   down_proj: median     10801x   p1      2340x   min       810x
-   gate_proj: median      2868x   p1       695x   min       437x
-      k_proj: median      2409x   p1       639x   min       327x
-      o_proj: median      3439x   p1       762x   min       539x
-      q_proj: median      2653x   p1       606x   min       262x
-     up_proj: median      4098x   p1      1055x   min       668x
-      v_proj: median      3171x   p1       953x   min       772x
+   down_proj: median     11985x   p1      2381x   min       625x
+   gate_proj: median      2926x   p1       753x   min       476x
+      k_proj: median      2370x   p1       601x   min       414x
+      o_proj: median      3518x   p1       723x   min       434x
+      q_proj: median      2866x   p1       619x   min       299x
+     up_proj: median      4007x   p1      1029x   min       673x
+      v_proj: median      3425x   p1       715x   min       688x
 
-Why not tests: share of outputs flagged by a Gaussian-calibrated atol (10x max error)
-   down_proj: mean   0.00%   worst input   0.00%
-   gate_proj: mean   0.00%   worst input   0.00%
-      k_proj: mean   0.00%   worst input   0.00%
-      o_proj: mean   0.00%   worst input   0.00%
-      q_proj: mean   0.00%   worst input   0.00%
-     up_proj: mean   0.00%   worst input   0.00%
-      v_proj: mean   0.00%   worst input   0.00%
+Why not tests: share of decode inputs where a test fails (naive kernel, inputs of
+prompts 2-4; the calibrated atol is 10x the largest honest error on prompt 1)
+
+  torch defaults     down_proj gate_proj    k_proj    o_proj    q_proj   up_proj    v_proj
+  honest                  0.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
+  drop tail (4)         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 accumulator      100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 partials         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 output           100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+
+  calibrated atol    down_proj gate_proj    k_proj    o_proj    q_proj   up_proj    v_proj
+  honest                  0.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
+  drop tail (4)         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 accumulator      100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 partials         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 output           100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+
+  proven checker     down_proj gate_proj    k_proj    o_proj    q_proj   up_proj    v_proj
+  honest                  0.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
+  drop tail (4)         100.0%    100.0%    100.0%    100.0%    100.0%    100.0%    100.0%
+  BF16 accumulator      100.0%    100.0%     99.3%    100.0%    100.0%    100.0%     95.1%
+  BF16 partials         100.0%    100.0%     97.2%    100.0%    100.0%    100.0%     91.0%
+  BF16 output           100.0%    100.0%     97.9%    100.0%    100.0%    100.0%     96.5%
+
+proven checker false alarms: 0 (must be 0)
 
 proven bound violations: 0 (must be 0)
