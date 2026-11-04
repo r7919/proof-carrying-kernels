@@ -131,23 +131,24 @@ activations). Full output: `harness/tightness_out.txt`.
 
 `python -m harness.real_activations`: Qwen2.5-0.5B-Instruct in BF16, decode-step inputs to
 every linear layer (4 prompts x 16 tokens, 2 inputs kept per layer and prompt), through the
-bit-exact model of the coalesced kernel. Run on CPU; the kernel model is bit-identical to
-the CUDA kernel, so only the captured activations depend on the device. Full output:
+bit-exact model of the coalesced kernel (which is bit-identical to the CUDA kernel), with
+the model run on the RTX 5060. A CPU run gives the same picture to within a few percent;
+only the captured activations depend on the device. Full output:
 `harness/real_activations_out.txt`.
 
 | Layer | Row bound / error, median (min) | Block tau / \|rho\|, b = 64, median (min) | b = 128, median (min) |
 |---|---|---|---|
-| q_proj | 287x (13x) | 2017x (233x) | 2866x (299x) |
-| k_proj | 247x (21x) | 1645x (247x) | 2370x (414x) |
-| v_proj | 312x (20x) | 2147x (289x) | 3425x (688x) |
-| o_proj | 348x (12x) | 2346x (213x) | 3518x (434x) |
-| gate_proj | 301x (14x) | 2076x (306x) | 2926x (476x) |
-| up_proj | 375x (14x) | 2822x (459x) | 4007x (673x) |
-| down_proj | 1052x (27x) | 7835x (282x) | 11985x (625x) |
+| q_proj | 285x (13x) | 2035x (230x) | 2635x (299x) |
+| k_proj | 253x (17x) | 1495x (268x) | 2009x (531x) |
+| v_proj | 311x (24x) | 2167x (339x) | 2994x (722x) |
+| o_proj | 347x (16x) | 2500x (199x) | 3409x (494x) |
+| gate_proj | 300x (13x) | 2099x (290x) | 2937x (520x) |
+| up_proj | 374x (16x) | 2838x (469x) | 4038x (645x) |
+| down_proj | 1050x (30x) | 8317x (388x) | 10526x (659x) |
 
 - No proven-bound violations. Real activations come closer to the bound than any synthetic
-  case (minimum 12x, in `o_proj`, against 25x for synthetic outliers), but never cross it.
-- Block tightness matches the synthetic study: 1,600-12,000x (median), far looser than
+  case (minimum 13x, in `q_proj` and `gate_proj`, against 25x for synthetic outliers), but never cross it.
+- Block tightness matches the synthetic study: 1,500-10,500x (median), far looser than
   V-ABFT, as expected for a threshold that may never false-alarm.
 
 #### Why not tests?
@@ -162,9 +163,9 @@ the largest honest error) and applied to the other three. Share of decode inputs
 |---|---|---|---|
 | honest | 0% | 0% | 0% |
 | drop tail (4 columns) | 100% | 100% | 100% |
-| BF16 accumulator | 100% | 100% | 95.1-100% |
-| BF16 partial sums | 100% | 100% | 91.0-100% |
-| BF16 output | 100% | 100% | 96.5-100% |
+| BF16 accumulator | 100% | 100% | 93.8-100% |
+| BF16 partial sums | 100% | 100% | 95.8-100% |
+| BF16 output | 100% | 100% | 97.2-100% |
 
 - On this model, both tests are as good as the checker: no false alarms, every shortcut
   caught. Decode activations of a well-behaved small model never reach the regime where a
