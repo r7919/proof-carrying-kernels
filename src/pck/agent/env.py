@@ -25,7 +25,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.agent.config import KernelConfig, emulate
+from pck.agent.config import KernelConfig, config_index, emulate
 from pck.agent.regimes import Kernel, RegimeName, evaluate
 from pck.agent.spec import Spec, violates_spec
 from pck.agent.task import Task, activations
@@ -56,23 +56,20 @@ def task_key(task: Task) -> str:
     return f"{task.m}x{task.n}"
 
 
-def config_key(cfg: KernelConfig) -> str:
-    return json.dumps(cfg.as_dict(), sort_keys=True)
-
-
 @dataclass
 class TimingTable:
     """Measured times (us) of config-only variants per task shape, plus the baseline.
 
-    Built once by a sweep on the GPU (which is also the brute-force baseline) and served
-    to every episode, so config-only variants are never timed live."""
+    ``times[shape][i]`` is the time of ``config_space()[i]``. Built once by a sweep on the
+    GPU (`harness/sweep_template.py`, which is also the brute-force baseline) and served to
+    every episode, so config-only variants are never timed live."""
 
-    times: dict[str, dict[str, float]] = field(default_factory=dict)
+    times: dict[str, list[float]] = field(default_factory=dict)
     baseline: dict[str, float] = field(default_factory=dict)
 
     def speedup(self, cfg: KernelConfig, task: Task) -> float:
         key = task_key(task)
-        return self.baseline[key] / self.times[key][config_key(cfg)]
+        return self.baseline[key] / self.times[key][config_index(cfg)]
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps({"times": self.times, "baseline": self.baseline}, indent=1))
@@ -142,12 +139,14 @@ class Episode:
         seed: int = 0,
         call_cost: float = 0.01,
         max_calls: int = 10,
+        locked: Mapping[str, object] | None = None,
     ) -> None:
         self.task, self.regime, self.timing = task, regime, timing
         self.spec = spec or Spec()
         self.backend = backend or EmulatorBackend()
         self.rng = np.random.default_rng(seed)
         self.call_cost, self.max_calls = call_cost, max_calls
+        self.locked = dict(locked or {})
         self.calls = 0
         self.cfg: KernelConfig | None = None
         self.slot_code: str | None = None
@@ -178,6 +177,9 @@ class Episode:
         return out
 
     def _write_kernel(self, config: Mapping[str, Any], slot_code: str | None) -> str:
+        for name, value in self.locked.items():
+            if name in config and config[name] != value:
+                return f"invalid config: {name} is fixed to {value!r} in this task"
         try:
             cfg = KernelConfig(**config)
         except (TypeError, ValueError) as e:
