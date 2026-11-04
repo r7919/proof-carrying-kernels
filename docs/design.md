@@ -76,6 +76,8 @@ rejects `sorry` and any non-standard axiom).
 | `t4_computed` (T4) | `r` uniform and independent of `y` | trusted sign draw; commit-then-challenge in evaluation |
 | `t4_spread_computed` (T4, Paley-Zygmund) | as T4; deviation with \|\|D\|\|_2 >= 2 (tau + E + u a.\|x\|) | same |
 | `topK_check_iff_max_sum`, `prefix_iff_min_ge_max` | logits are real numbers (no NaN) | NaN check and `min_sel >= max_rej` in `sampling_kernel.cu` |
+| `topP_computed_minimal`, `topP_softmax_computed` | as top-k; checker masses within `eps` of the true softmax masses (assumed) | prefix check, `mass >= p - slack`, `mass - p_min < p + slack` in `check_topp`, `sampling_kernel.cu` |
+| `topP_computed_sound` | the sampler's own masses within `tol`; `slack >= tol + eps` | `slack = tol + gamma_{V+2}(u64)` (CPU), `tol + gamma_{V+3S+16}(u64)` (GPU) |
 
 ### Assumed, not proven
 
@@ -87,10 +89,11 @@ rejects `sorry` and any non-standard axiom).
   an underflow floor. Its proof needs bit-level floating-point semantics (exactness of
   TwoSum), which the real-number rounding model cannot express.
 - CUDA's FP64 `exp` is within 1 ulp (NVIDIA's documented bound), for the top-p masses.
+- The top-p checker's FP64 masses (exp, sums, normalization) are within
+  `gamma_{V+2}(u64)` (CPU) or `gamma_{V+3S+16}(u64)` (GPU, `S` segments) of the true
+  softmax masses. The top-p theorems take this error `eps` as a hypothesis.
 - The proofs cover the checker's algorithm; the CUDA source is kept small and tested
   against FP64 references to close that gap.
-
-Not yet proven: the top-p check with its tolerance.
 
 ## Design decisions and findings
 
