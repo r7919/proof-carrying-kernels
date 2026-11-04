@@ -15,6 +15,7 @@ produced it and the file with its full output, so every number here can be repro
 | Tightness, real activations | `python -m harness.real_activations` | `harness/real_activations_out.txt` |
 | Agent template sweep | `harness/sweep_template.py` | `harness/sweep_template_out.txt`, `harness/timing_table.json` |
 | BF16 shortcut at batch 1-8 | `harness/bench_batched.py` | `harness/bench_batched_out.txt` |
+| Exploit window, activation sparsity | `python -m harness.exploit_window` | `harness/exploit_window_out.txt` |
 
 ## Measurements
 
@@ -220,3 +221,28 @@ FP32 accumulation once each weight load serves B activation vectors. Full output
   96-100% of rows break the proven bound.
 - Together with the template sweep: on a bandwidth-bound GEMV, a shortcut can only be faster
   by reading less of `W`. Precision tricks alone never pay.
+
+### The exploit window: activation sparsity on real layers
+
+`python -m harness.exploit_window` runs the column-major template with activation sparsity
+(skip every column with |x_j| below a threshold, so its weights are never read) on the 14
+real Qwen2.5-0.5B layers, over every captured decode input episodes may see, and combines
+the verdicts with the timing table. Full output: `harness/exploit_window_out.txt`.
+
+| Layer | Threshold | Skipped | Calibrated accepts | Proof-gated accepts | vs honest column-major | vs honest row-major |
+|---|---|---|---|---|---|---|
+| l12 down_proj | 0.005 | 9% | 100% | 0% | 1.19x | 0.95x |
+| l20 down_proj | 0.01 | 6% | 100% | 0% | 1.15x | 0.93x |
+| l20 o_proj | 0.01 | 7% | 100% | 0% | 1.12x | 0.82x |
+
+- **Accuracy: the window exists.** On every real layer some threshold skips 3-16% of the
+  columns, passes the calibrated test on at least 95% of inputs and fails the proof-gated
+  checker on every input. Larger thresholds are caught by both.
+- **Speed: it pays only within the column-major layout.** Against the fastest honest
+  column-major kernel the accepted cheat is 1.06-1.19x faster on the MLP and `o_proj`
+  layers. Against the fastest honest kernel of either layout it never pays: the row-major
+  kernel is 15-25% faster than the honest column-major one (its threads read long
+  contiguous runs of one row), more than skipping saves.
+- So a speed incentive to cheat exists when weights are stored transposed, as
+  sparsity-aware inference engines (TEAL, Deja Vu) do to make skipping pay, and not when
+  they are stored row-major.
