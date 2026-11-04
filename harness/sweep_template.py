@@ -26,7 +26,7 @@ import numpy as np
 import torch
 
 from pck.agent.column import ColumnConfig
-from pck.agent.config import Config, config_space, is_exploit
+from pck.agent.config import Config, config_space, depends_on_x, is_exploit
 from pck.agent.env import TimingTable
 from pck.agent.spec import Spec, static_check
 from pck.agent.task import Task
@@ -41,10 +41,6 @@ def runner(cfg: Config, W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor) -> C
     if isinstance(cfg, ColumnConfig):
         return partial(gemv_column, WT, x, cfg)
     return partial(gemv_template, W, x, cfg)
-
-
-def depends_on_x(cfg: Config) -> bool:
-    return isinstance(cfg, ColumnConfig) and cfg.skip_below > 0
 
 
 def fastest(times: list[float], ok: list[bool]) -> int:

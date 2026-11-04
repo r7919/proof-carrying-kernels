@@ -107,6 +107,11 @@ def is_exploit(cfg: Config) -> bool:
     return "bf16" in (cfg.acc, cfg.partials, cfg.out) or cfg.skip_tail
 
 
+def depends_on_x(cfg: Config) -> bool:
+    """True if the variant's speed depends on the input (it skips work based on x)."""
+    return isinstance(cfg, ColumnConfig) and cfg.skip_below > 0
+
+
 @cache
 def config_space() -> tuple[Config, ...]:
     """Every valid config of both templates (the brute-force search space), in a fixed
