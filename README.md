@@ -63,9 +63,18 @@ cd lean && lake exe cache get && lake build   # Mathlib cache, then the proofs
 lake env lean scripts/Axioms.lean              # fails on sorry or any non-standard axiom
 ```
 
-Proven so far: `PCK.tree_sum_error`, the core of T1. For any binary summation tree t
-with height(t) * u < 1, |fl(t) - sum| <= gamma_height(t) * sum |x_i|, in the standard
-rounding model for addition (`PCK.AddModel`).
+Proven so far, in the standard rounding model for addition (`PCK.AddModel`), with no
+`sorry` and only Lean's standard axioms:
+
+| Theorem | Statement |
+|---|---|
+| `PCK.tree_sum_error` | Any binary summation tree t with height(t) * u < 1 has \|fl(t) - sum\| <= gamma_height(t) * sum \|x_i\| |
+| `PCK.row_within_bound` | A GEMV row summed by any tree visiting each (zero-padded) column once, of height <= h, is within gamma_h * sum_j \|W_ij x_j\| of exact. Covers both CUDA kernels |
+| `PCK.t1_block` | **T1 (no false alarms)**: for every sign vector and input, \|c . x - r . y\| <= (gamma_h + u) * (a . \|x\|), the checker's threshold before its own rounding |
+| `PCK.t2_block` | **T2 (detection)**: if one output is off by more than twice that threshold and the rest are within spec, the residual exceeds the threshold, for every sign vector |
+
+Next: T3 (the checker's own FP64 and round-up arithmetic never lowers the threshold below
+this bound, including the compensated dot product).
 
 CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, compiles the CUDA
 kernels for `sm_120`, and builds and axiom-audits the Lean proofs. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
