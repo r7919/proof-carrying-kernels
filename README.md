@@ -11,16 +11,18 @@ spec, yet still catches low-precision shortcuts, dropped work and bit flips.
 
 ## Status
 
-Phase 1, CPU side. The bit-faithful kernel model, checker and fault injector are in
-`src/pck/`, tested against the properties the Lean theorems will state. CUDA kernels and
-Lean proofs come next.
+Phase 1. The bit-faithful kernel model, checker and fault injector are in `src/pck/`,
+tested against the properties the Lean theorems will state. The first CUDA kernel, a naive
+BF16 GEMV that matches the model bit for bit, is in `src/pck/cuda/`. Lean proofs come next.
 
 ## Layout
 
 ```
-src/pck/      Python package: FP helpers, GEMV emulator, blocked checker, fault injection
-tests/        pytest + Hypothesis property tests (mirrors of theorems T1 and T2)
-harness/      experiments, e.g. the numerics study that fixes block size b
+src/pck/        Python package: FP helpers, GEMV emulator, blocked checker, fault injection
+src/pck/cuda/   CUDA kernels (csrc/) and their PyTorch bindings, compiled on first use
+tests/          pytest + Hypothesis property tests (mirrors of theorems T1 and T2)
+tests/gpu/      kernel tests: bit-exact against the emulator (need the gpu extra and a GPU)
+harness/        experiments: numerics study, GEMV benchmark
 ```
 
 ## Development
@@ -35,8 +37,18 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run python harness/numerics_sim.py   # numerics study, about 7 min on CPU
 ```
 
-CI runs lint, type checks and the test suite on Python 3.11 to 3.14. GPU tests will run
-locally, since hosted CI has no GPUs.
+### GPU (Linux or WSL2, CUDA 12.8)
+
+Needs an NVIDIA driver (on Windows for WSL2) and the CUDA 12.8 toolkit (`nvcc`).
+
+```bash
+uv sync --extra gpu              # adds PyTorch cu128 and ninja
+uv run pytest tests/gpu          # first run compiles the kernels (about a minute)
+uv run python harness/bench_gemv.py
+```
+
+CI runs lint, type checks and the CPU tests on Python 3.11 to 3.14, and compiles the CUDA
+kernels for `sm_120`. Kernel tests run on a GPU machine, since hosted CI has no GPUs.
 
 ## Numerics study
 
