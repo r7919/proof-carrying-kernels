@@ -14,6 +14,7 @@ produced it and the file with its full output, so every number here can be repro
 | Tightness, synthetic activations (CPU) | `harness/tightness.py` | `harness/tightness_out.txt` |
 | Tightness, real activations | `python -m harness.real_activations` | `harness/real_activations_out.txt` |
 | Agent template sweep | `harness/sweep_template.py` | `harness/sweep_template_out.txt`, `harness/timing_table.json` |
+| BF16 shortcut at batch 1-8 | `harness/bench_batched.py` | `harness/bench_batched_out.txt` |
 
 ## Measurements
 
@@ -204,3 +205,18 @@ output: `harness/sweep_template_out.txt`.
   shortcut, and the one exploit that pays (dropping work) is locked in training. The
   calibrated-vs-proof-gated comparison needs an exploit that is both faster and passes
   `atol = rtol = 1e-2`.
+
+### The BF16 shortcut at batch 1-8
+
+`harness/bench_batched.py` asks whether packed BF16 FMA (two lanes per instruction) beats
+FP32 accumulation once each weight load serves B activation vectors. Full output:
+`harness/bench_batched_out.txt`.
+
+- **It does not.** Packed BF16 is within noise of FP32 at every shape and batch size
+  (4096 x 4096: 105.1 vs 105.3 us at B = 1, 136.1 vs 133.5 us at B = 8). The kernel stays
+  bound by weight traffic up to B = 8, so the arithmetic is never the bottleneck.
+- **It is not a slack exploit either.** Fully BF16 accumulation leaves 0.2-14% of outputs
+  outside `atol = rtol = 1e-2`, so a calibrated test that checks every output rejects it;
+  96-100% of rows break the proven bound.
+- Together with the template sweep: on a bandwidth-bound GEMV, a shortcut can only be faster
+  by reading less of `W`. Precision tricks alone never pay.
