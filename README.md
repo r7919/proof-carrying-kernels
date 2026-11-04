@@ -40,6 +40,8 @@ uv run python harness/numerics_sim.py   # numerics study, about 7 min on CPU
 ### GPU (Linux or WSL2, CUDA 12.8)
 
 Needs an NVIDIA driver (on Windows for WSL2) and the CUDA 12.8 toolkit (`nvcc`).
+CUDA 12.8 supports host GCC up to 14; on newer distros install `g++-14` and set
+`NVCC_CCBIN=g++-14`.
 
 ```bash
 uv sync --extra gpu              # adds PyTorch cu128 and ninja
