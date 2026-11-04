@@ -3,12 +3,13 @@
 One transformer decode layer at batch 1 multiplies by seven weight matrices (Llama-3-8B
 shapes: q, k, v, o, gate, up, down). Inference engines fuse the ones that share an input,
 so the default "fused" layout runs four GEMVs: qkv, o, gate_up, down; "split" runs all
-seven. This times the whole layer three ways, on a cold L2:
+seven. This times the whole layer four ways, on a cold L2:
 
   gemv only       the seven coalesced GEMVs
   serial checks   each GEMV followed by its checker on the same stream
   overlapped      each checker on a side stream, started once its GEMV finishes, so it
                   runs while the next GEMV does; the layer ends when the last check ends
+  batched         all GEMVs, then one checker launch for the whole layer (check_many)
 
 The Phase 1 gate is overhead < 5% at the chosen block size b.
 
@@ -21,7 +22,13 @@ import argparse
 
 import torch
 
-from pck.cuda import GpuBlockedChecker, PendingCheck, SideStreamChecker, gemv_coalesced
+from pck.cuda import (
+    GpuBlockedChecker,
+    PendingCheck,
+    SideStreamChecker,
+    check_many,
+    gemv_coalesced,
+)
 from pck.cuda.timing import ColdL2Timer
 from pck.fp import tree_height
 
@@ -80,10 +87,15 @@ def main() -> None:
             pending.append(side.submit(checker, x, gemv_coalesced(W, x, THREADS)))
         side.wait_all()  # the layer is done only when its last check is
 
-    # Correctness first: every check must pass on legit outputs, in both modes.
+    def batched() -> None:
+        check_many([(c, x, gemv_coalesced(W, x, THREADS)) for _, W, x, c in mats])
+
+    # Correctness first: every check must pass on legit outputs, in every mode.
     serial_ok = all(bool(c.verdict(x, gemv_coalesced(W, x, THREADS)).all()) for _, W, x, c in mats)
     overlapped()
     overlap_ok = all(bool(p.wait().verdict.all()) for p in pending)
+    outputs = [(c, x, gemv_coalesced(W, x, THREADS)) for _, W, x, c in mats]
+    batch_ok = all(bool(r.verdict.all()) for r in check_many(outputs))
 
     timer = ColdL2Timer(10, args.reps)
     base = timer(gemv_only)
@@ -91,6 +103,7 @@ def main() -> None:
         ("gemv only", base),
         ("serial checks", timer(serial)),
         ("overlapped", timer(overlapped)),
+        ("batched", timer(batched)),
     ]
     weight_mib = sum(W.numel() * 2 for _, W, _, _ in mats) / 2**20
     bank_mib = sum(c.c.numel() * 4 + c.a.numel() * 2 for *_, c in mats) / 2**20
@@ -101,7 +114,10 @@ def main() -> None:
         f" weights {weight_mib:.0f} MiB, checksum bank {bank_mib:.1f} MiB"
         f" ({bank_mib / weight_mib:.1%})"
     )
-    print(f"all checks pass on legit outputs: serial {serial_ok}, overlapped {overlap_ok}")
+    print(
+        f"all checks pass on legit outputs: serial {serial_ok}, overlapped {overlap_ok},"
+        f" batched {batch_ok}"
+    )
     print(f"{'mode':>14s} {'ms [p10, p90]':>26s} {'overhead':>9s}")
     for name, t in rows:
         print(
