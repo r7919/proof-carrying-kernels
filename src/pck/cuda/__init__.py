@@ -9,14 +9,28 @@ from pck.cuda.checker import (
     check_many,
 )
 from pck.cuda.gemv import gemv_coalesced, gemv_naive
+from pck.cuda.sampling import (
+    SamplingCheck,
+    check_topk_gpu,
+    check_topp_gpu,
+    sharded_topk_gpu,
+    topk_sample,
+    topp_select,
+)
 
 __all__ = [
     "DEFAULT_BLOCK",
     "CheckResult",
     "GpuBlockedChecker",
     "PendingCheck",
+    "SamplingCheck",
     "SideStreamChecker",
     "check_many",
+    "check_topk_gpu",
+    "check_topp_gpu",
     "gemv_coalesced",
     "gemv_naive",
+    "sharded_topk_gpu",
+    "topk_sample",
+    "topp_select",
 ]
