@@ -18,3 +18,25 @@ def flip_bit(y: NDArray[np.float32], index: int, bit: int) -> NDArray[np.float32
     f = y.copy()
     f.view(np.uint32)[index] ^= np.uint32(1 << bit)
     return f
+
+
+def sharded_topk(
+    logits: NDArray[np.float32], k: int, shards: int, per_shard: int
+) -> NDArray[np.int64]:
+    """An approximate top-k of the kind that silently returns the wrong set.
+
+    Splits the vocabulary into ``shards`` contiguous shards, keeps the ``per_shard`` largest
+    of each, then takes the top k of the survivors. Exact when ``per_shard >= k``; when
+    ``per_shard < k`` it misses true top-k logits that cluster in one shard.
+    """
+    a = np.asarray(logits, dtype=np.float32)
+    if not 1 <= k <= a.size or shards < 1 or per_shard < 1:
+        raise ValueError("need 1 <= k <= len(logits), shards >= 1 and per_shard >= 1")
+    candidates = []
+    for idx in np.array_split(np.arange(a.size), shards):
+        if idx.size:
+            order = np.lexsort((idx, -a[idx].astype(np.float64)))
+            candidates.append(idx[order[:per_shard]])
+    pool = np.concatenate(candidates)
+    order = np.lexsort((pool, -a[pool].astype(np.float64)))
+    return pool[order[:k]].astype(np.int64)
