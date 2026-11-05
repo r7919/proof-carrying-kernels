@@ -110,6 +110,8 @@ def load(preset: str | Path, overrides: list[str] | None = None) -> RunConfig:
     if unknown:
         raise ValueError(f"unknown config keys {sorted(unknown)} in {path}")
     data = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
+    if data.get("time_limit_min") == "none":  # TOML has no null
+        data["time_limit_min"] = None
     cfg = RunConfig(**data)
     for item in overrides or []:
         key, _, value = item.partition("=")

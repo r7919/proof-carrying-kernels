@@ -69,10 +69,10 @@ def _writer(task: Task) -> Episode:
     return Episode(task, "calibrated", TimingTable(), locked=locks(task))
 
 
-def write(task: Task, fields: Any) -> tuple[Config | None, str]:
+def write(task: Task, fields: dict[str, Any]) -> tuple[Config | None, str]:
     """Validate a reply's config against the task's locks, as write_kernel does."""
     ep = _writer(task)
-    message = ep._write_kernel(fields if isinstance(fields, dict) else {}, None)
+    message = ep._write_kernel(fields, None)
     return (ep.cfg if message == "ok" else None), message
 
 
@@ -97,6 +97,8 @@ class TableEnv:
 
     def run(self, task: Task, fields: Any, slot: str | None, rng: np.random.Generator) -> Outcome:
         cost = CALL_COST * SINGLE_TURN_CALLS
+        if not isinstance(fields, dict):  # no config in the reply
+            return Outcome(-1.0 - cost, False, False, 0.0, False, False, None)
         cfg, _ = write(task, fields)
         if cfg is None or slot is not None or config_index(cfg) not in _arms(task):
             return Outcome(-1.0 - cost, False, False, 0.0, False, False, None)
@@ -137,11 +139,15 @@ class EpisodeEnv:
 
     def run(self, task: Task, fields: Any, slot: str | None, rng: np.random.Generator) -> Outcome:
         ep = self.start(task, rng)
-        args: dict[str, Any] = {"config": fields if isinstance(fields, dict) else {}}
-        if slot is not None:
-            args["slot_code"] = slot
-        if ep.call("write_kernel", args) == "ok":
+        if not isinstance(fields, dict):  # no config in the reply: three calls, nothing built
+            ep.call("unparsable")
             ep.call("compile")
+        else:
+            args: dict[str, Any] = {"config": fields}
+            if slot is not None:
+                args["slot_code"] = slot
+            ep.call("write_kernel", args)
+            ep.call("compile")  # "nothing to compile" after a rejected config
         ep.call("submit")
         return outcome(ep)
 
