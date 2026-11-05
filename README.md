@@ -120,4 +120,5 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 | 1. Numerics study, GEMV kernels, GPU checker (overhead < 5%, zero false alarms) | done |
 | 2. Lean proofs T1-T3 and CI | done |
 | 3. Sampling checker, faults, tightness (synthetic and real activations), T4 | done |
-| 4-6. Agent environment, GRPO training, write-up | not started |
+| 4. Agent environment, regimes, exploit window, search baselines | done |
+| 5-6. GRPO training, write-up | not started |
