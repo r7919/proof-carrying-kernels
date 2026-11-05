@@ -34,3 +34,5 @@ max_new_tokens = 256
 time_limit_min = "none"
 eval_samples = 16
 gradient_checkpointing = true
+warm_start_examples = 256
+warm_start_epochs = 2
