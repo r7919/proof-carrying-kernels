@@ -246,7 +246,7 @@ def grpo_loss(policy: Policy, groups: list[list[Trajectory]]) -> dict[str, float
         delta = ref - logp
         kl = torch.exp(delta) - delta - 1.0
         loss = -(adv * logp - beta * kl).sum() / tokens
-        loss.backward()  # type: ignore[no-untyped-call]
+        loss.backward()
         kl_sum += float(kl.detach().sum())
         n += len(logp)
     return {"kl": kl_sum / max(n, 1)}

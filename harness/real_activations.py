@@ -85,7 +85,7 @@ def capture(
         with torch.no_grad():
             for i, ids in enumerate(prompts):
                 prompt[0] = i
-                model.generate(  # type: ignore[operator]
+                model.generate(  # type: ignore[operator, unused-ignore]
                     input_ids=ids,
                     attention_mask=torch.ones_like(ids),
                     max_new_tokens=new_tokens,

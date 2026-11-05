@@ -249,8 +249,8 @@ def _worker(conn: Connection, lib: str, cfg_fields: dict[str, Any], w_bits: Any)
             for _ in range(reps):
                 for timed in ("kernel", "cublas"):
                     flush.zero_()
-                    start = torch.cuda.Event(enable_timing=True)  # type: ignore[no-untyped-call]
-                    end = torch.cuda.Event(enable_timing=True)  # type: ignore[no-untyped-call]
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
                     start.record()
                     if timed == "kernel":
                         code = fn(

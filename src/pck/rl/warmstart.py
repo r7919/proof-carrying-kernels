@@ -121,7 +121,7 @@ def warm_start(
             for ids, mask in chunk:
                 logp, _ = token_logps(policy.model, ids, mask)
                 loss = -logp.sum() / tokens
-                loss.backward()  # type: ignore[no-untyped-call]
+                loss.backward()
                 total += float(loss.detach()) * tokens
             torch.nn.utils.clip_grad_norm_(params, 1.0)
             opt.step()
