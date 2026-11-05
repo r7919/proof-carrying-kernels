@@ -94,11 +94,12 @@ def test_a_crash_is_contained() -> None:
 
 
 def test_outputs_that_change_between_timed_runs_are_rejected() -> None:
-    sneaky = (
-        "__device__ unsigned pck_calls = 0;\n"
+    sneaky = (  # counts launches (one increment per launch); honest only on the first one
+        "__device__ volatile unsigned pck_launches = 0;\n"
         "__device__ float pck_slot_term(float w, float x, int64_t j) {\n"
-        "  if (j == 0) atomicAdd(&pck_calls, 1u);\n"
-        "  return pck_calls > 1 ? 0.0f : __fmul_rn(w, x); }"
+        "  if (j == 0 && blockIdx.x == 0 && threadIdx.x == 0)\n"
+        "    atomicAdd((unsigned*)&pck_launches, 1u);\n"
+        "  return pck_launches >= 2 ? 0.0f : __fmul_rn(w, x); }"
     )
     kernel = build(KernelConfig(), sneaky)
     W, x = data(256, 512)
