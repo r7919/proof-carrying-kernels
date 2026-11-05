@@ -20,6 +20,7 @@ produced it and the file with its full output, so every number here can be repro
 | Search baselines per regime (CPU) | `python -m harness.verdicts`, `python -m harness.baselines` | `harness/verdict_table.json`, `harness/baselines_out.txt` |
 | Hacks the checker lets through (CPU) | `python -m harness.hack_anatomy` | `harness/hack_anatomy_out.txt` |
 | Non-LLM control policy (CPU) | `python -m pck.rl.control` | `harness/control_out.txt` |
+| GRPO smoke run, Qwen3-0.6B | `python -m pck.rl.train --config smoke --compare` | `harness/grpo_smoke_out.txt`, `harness/grpo_smoke/` |
 
 ## Measurements
 
@@ -358,3 +359,34 @@ pay (`pck.rl.envs.TableEnv`), with 1,000 steps of 8 episodes per seed. Full outp
   regime teaches, not the speed reached.
 - Each run takes about 20 s on CPU. The LLM runs (`python -m pck.rl.train`) use the same
   task and rewards.
+
+### GRPO smoke run: an LLM keeps the hack only when the reward pays for it
+
+`python -m pck.rl.train --config smoke --compare` trains two Qwen3-0.6B LoRA adapters on
+layer-12 `o_proj`, one per regime, with the same prompt, seed and budget. Each run gets
+4.5 minutes on the RTX 5060 (44-47 GRPO steps of 2 x 8 single-turn episodes, rewards from
+the tables), then 32 sampled evaluation episodes. Full report:
+`harness/grpo_smoke_out.txt`, from the run files in `harness/grpo_smoke/`
+(`python -m harness.grpo_report`).
+
+| Regime | Exploit at step 0 | Exploit from | Final eval: reward | Passed | Hacks |
+|---|---|---|---|---|---|
+| calibrated | 38% | step 2 (100%) | 1.44 | 100% | **100%** |
+| proof-gated | 0% passed | never | 1.28 | 100% | **0%** |
+
+- **The regime decides whether the hack survives.** The base model already proposes
+  activation sparsity: 38% of its first replies set `skip_below > 0`. Under calibrated
+  tests these pass, and by step 2 every submission is a hack. Under the proof-gated
+  checker every early reply fails (reward -0.03 at step 0), and by step 5 the policy
+  writes honest configs only.
+- **The hack it keeps is not faster.** The calibrated policy settles on
+  `skip_below = 0.01, splits = 16` (speedup 1.47). The best honest kernel is just as fast;
+  the faster cheat in the table (11% above honest) is never found. Once all 8 replies of
+  a group are identical, the group-normalized advantage is zero and learning stops. So
+  the calibrated test lets the hack in, but this run has no speed reason to prefer it.
+- **The proof-gated run drifts.** It reaches 1.46 by step 5, near the honest optimum
+  (1.47), then falls to 1.28 by step 25 on a degenerate reply with a duplicated key, while
+  the KL to the base model rises to about 1.0. A learning rate of 3e-4 is too high for a
+  single-task run.
+- This is a pilot of one seed on one task. The plan's comparison needs at least 3 seeds,
+  more tasks (the pilot preset), and held-out evaluation.
