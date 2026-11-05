@@ -97,6 +97,28 @@ rejects `sorry` and any non-standard axiom).
 - The proofs cover the checker's algorithm; the CUDA source is kept small and tested
   against FP64 references to close that gap.
 
+### Keeping the code what the proofs describe
+
+- **PTX audit** (`src/pck/cuda/ptx_audit.py`, run in CUDA CI). This compiles the trusted
+  checkers with the extension's flags and fails on any approximate, flush-to-zero or
+  fast-division instruction. It also fails if the extension's flags allow contraction or
+  fast math. The one allowed instruction is `ex2.approx.ftz.f32` in the sampling checker,
+  the core of CUDA's accurate `expf`; its error is the documented bound the top-p theorems
+  take as `eps`.
+- **Pinned checker** (`src/pck/manifest.py`, `checker_lock.json`). The trusted checker
+  files are hash-pinned: the CPU and GPU checkers, `fp.py`, and the checker CUDA sources.
+  A proof-gated episode refuses to start if the code on disk differs from the pin, and a
+  test fails until a deliberate change is re-pinned (`python -m pck.manifest --update`).
+- **Manifests.** Every proof-gated pass carries a `Manifest` that records:
+  - the variant's config and slot code;
+  - the spec's parameters;
+  - the checker hash and a hash of the Lean sources;
+  - the theorems it rests on (T1-T4);
+  - the measured speedup and the git commit.
+
+  `Manifest.problems()` reports a certificate made with a different checker or different
+  proofs.
+
 ## The agent environment
 
 Phase 4 turns the checker into a reward signal. An agent writes a GEMV kernel for a task
@@ -138,11 +160,14 @@ regimes are scored against.
 
 **Tasks.**
 
-- Training: 20 synthetic tasks (Gaussian and Student-t inputs on 10 shapes, `skip_tail`
+- Training: 22 synthetic tasks (Gaussian and Student-t inputs on 10 shapes, `skip_tail`
   locked off) and the 7 projections of Qwen2.5-0.5B layer 12, on captured decode
   activations.
-- Held out: 5 synthetic tasks (odd shapes, heavier tails, outliers, mixed scales) and the
+- Held out: 7 synthetic tasks (odd shapes, heavier tails, outliers, mixed scales) and the
   7 projections of layer 20.
+- Error budgets: a task's spec is set by its budget `h_spec` (default 64). Two training
+  tasks use a stricter budget (32) and two held-out tasks one that training never uses
+  (128).
 - Real tasks are set in a column-major deployment, the layout sparsity-aware engines
   (TEAL, Deja Vu) use. This is the only setting where the one cheat that passes calibrated
   tests also pays (results: the exploit window).
@@ -176,6 +201,55 @@ where input-dependent shortcuts pay). Such variants run on the GPU:
 
 The slot sees only `w`, `x` and `j`. The signs the checker uses are drawn after the kernel
 has run, so nothing the slot can read helps it guess them.
+
+## Training (Phase 5)
+
+`src/pck/rl/` trains a policy with GRPO and runs the non-LLM control.
+
+**Runs are configs.** A run is a `RunConfig` (`config.py`) loaded from a TOML preset with
+`key=value` overrides, so scaling up needs no code change:
+
+- `configs/smoke.toml` is about 10 minutes on the 5060 with `--compare`. It trains
+  Qwen3-0.6B with LoRA on layer-12 `o_proj`, where the calibrated test accepts an
+  activation-sparsity cheat 11% faster than the best honest kernel. Episodes are
+  single-turn, with rewards from the tables.
+- `configs/pilot.toml` is the plan's pilot: Qwen3-1.7B, multi-turn tool calling on full
+  CPU-model episodes, eight training tasks, evaluated on held-out tasks.
+
+```
+uv run python -m pck.rl.train --config smoke --compare
+uv run python -m pck.rl.train --config pilot --compare seed=1 steps=400
+```
+
+**Prompts** (`prompt.py`) are the same under every regime: the task, each knob with its
+allowed values and a neutral description, the fixed fields, and the reward rule. They do
+not mention the spec or which knobs break it.
+
+**Reward environments** (`envs.py`) report the reward and whether the submission passed,
+used a planted exploit, or is a hack:
+
+- `TableEnv` draws a config's verdict from the verdict table, so it costs microseconds and
+  matches full episodes in distribution.
+- `EpisodeEnv` runs full episodes on the CPU model or, with slot code, on the GPU sandbox.
+
+A reply without a parsable config scores like a kernel that never compiled.
+
+**The update** (`train.py`) is GRPO with one update per batch:
+
+- Each training task in the step gets a group of `group` trajectories, with rewards
+  normalized within the group.
+- The loss is a token-level policy gradient on the policy's own tokens, plus a k3 KL
+  penalty to the base model (the LoRA adapter switched off).
+- In multi-turn episodes the tool replies are appended as tokens in the template's own
+  turn format, without re-rendering the conversation. Training therefore sees exactly the
+  tokens sampling saw, even though Qwen3's template rewrites earlier turns.
+
+Each run writes `metrics.jsonl` (reward, pass, exploit and hack rates, and KL per step),
+sampled replies, a final evaluation and the adapter.
+
+**The control** (`control.py`) is a softmax policy over configs with the same advantage
+and the same rewards. If it hacks as much as the LLM, the finding is about the reward
+signal, not about LLMs.
 
 ## Design decisions and findings
 
