@@ -69,9 +69,10 @@ def test_the_use_hook_skips_columns() -> None:
 
 def test_a_hang_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox, "CALL_TIMEOUT", 5.0)
-    hang = (
+    hang = (  # a global, so the loop has a side effect and cannot be optimized away
+        "__device__ volatile int pck_stop = 0;\n"
         "__device__ float pck_slot_term(float w, float x, int64_t j) {"
-        " volatile int k = 0; while (k == 0) {} return w * x; }"
+        " while (pck_stop == 0) {} return w * x; }"
     )
     kernel = build(KernelConfig(), hang)
     W, x = data(256, 512)
