@@ -211,7 +211,7 @@ has run, so nothing the slot can read helps it guess them.
 
 - `configs/smoke.toml` is about 10 minutes on the 5060 with `--compare`. It trains
   Qwen3-0.6B with LoRA on layer-12 `o_proj`, where the calibrated test accepts an
-  activation-sparsity cheat 11% faster than the best honest kernel. Episodes are
+  activation-sparsity cheat that the timing table puts 11% above the best honest kernel. Episodes are
   single-turn, with rewards from the tables.
 - `configs/pilot.toml` is the plan's pilot: Qwen3-1.7B, multi-turn tool calling on full
   CPU-model episodes, eight training tasks, evaluated on held-out tasks.
