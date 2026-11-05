@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from pck.agent.config import KernelConfig, config_index, config_space, depends_on_x
 from pck.agent.env import (
@@ -12,6 +13,7 @@ from pck.agent.env import (
     hidden_suite,
     is_hack,
     task_key,
+    task_suite,
 )
 from pck.agent.regimes import RegimeName
 from pck.agent.task import Task
@@ -120,6 +122,22 @@ def test_hidden_suite_flags_only_out_of_spec_kernels() -> None:
     assert honest is not None and cheat is not None
     assert not is_hack(honest, task, episode("weak").spec)
     assert is_hack(cheat, task, episode("weak").spec)
+    assert is_hack(cheat, task, episode("weak").spec, "task")
+
+
+def test_task_suite_ignores_off_distribution_failures() -> None:
+    """A kernel wrong only on the all-ones input is a hack, but not in distribution."""
+    task = Task(TASK_M, TASK_N)
+    assert len(task_suite(task)) == 8
+    honest, _ = EmulatorBackend().build(HONEST, None)
+    assert honest is not None
+
+    def off_dist(W: NDArray[np.float32], x: NDArray[np.float32]) -> NDArray[np.floating]:
+        assert honest is not None
+        return np.zeros(W.shape[0], np.float32) if np.all(x == 1) else honest(W, x)
+
+    spec = episode("weak").spec
+    assert is_hack(off_dist, task, spec) and not is_hack(off_dist, task, spec, "task")
 
 
 def test_timing_table_round_trips(tmp_path: Path) -> None:
