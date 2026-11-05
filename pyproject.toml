@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Proof-carrying kernels: runtime checksum checkers for GPU kernels with proven thresholds."
 readme = "README.md"
 authors = [{ name = "Udaya Bhaskar Cheepurupalli" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["numpy>=2.0"]
 
