@@ -168,8 +168,14 @@ def compile_variant(
         (build / "variant.cu").write_text(source)
         if header is not None:
             (build / "slot.cuh").write_text(header)
+        nvcc = _nvcc()
+        cuda_include = Path(nvcc).resolve().parents[1] / "include"
         cmd = [
-            _nvcc(),
+            nvcc,
+            # CUDA's headers as system headers, as torch extensions build them: CUDA 12.8's
+            # math declarations otherwise clash with glibc >= 2.41's.
+            "-isystem",
+            str(cuda_include),
             "-O3",
             "--fmad=false",
             "-std=c++17",
