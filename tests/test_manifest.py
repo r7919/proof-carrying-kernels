@@ -46,3 +46,29 @@ def test_manifests_round_trip_and_verify() -> None:
     assert m.problems() == []
     stale = Manifest("t", {}, None, {}, 1.0, checker="0" * 64, lean="1" * 64)
     assert len(stale.problems()) == 2 if manifest.lean_hash() else 1
+
+
+def test_cli_reports_and_repins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["manifest"])
+    manifest.main()
+    assert "matches the pin" in capsys.readouterr().out
+    path = tmp_path / "lock.json"
+    path.write_text(json.dumps({"checker": "0" * 64, "files": {}}))
+    monkeypatch.setattr(manifest, "LOCK", path)
+    manifest.main()
+    assert "differs from the pinned one" in capsys.readouterr().out
+    monkeypatch.setattr(sys, "argv", ["manifest", "--update"])
+    manifest.main()
+    assert pinned()["checker"] == checker_hash()
+
+
+def test_outside_a_checkout_there_is_no_lean_hash_or_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(manifest, "ROOT", tmp_path)
+    assert manifest.lean_hash() is None
+    assert manifest.git_commit() is None
