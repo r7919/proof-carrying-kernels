@@ -15,6 +15,6 @@ prompts_per_step = 2
 lr = 3e-4
 kl = 0.01
 temperature = 1.0
-max_new_tokens = 64
+max_new_tokens = 128
 time_limit_min = 4.5
 eval_samples = 32
