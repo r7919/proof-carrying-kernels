@@ -209,10 +209,10 @@ def _worker(conn: Connection, lib: str, cfg_fields: dict[str, Any], w_bits: Any)
     import ctypes
     import statistics
 
-    import torch
-
     cfg = make_config(cfg_fields)
     try:
+        import torch
+
         fn = ctypes.CDLL(lib).pck_launch
         fn.restype = ctypes.c_int
         fn.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_longlong] * 2 + [ctypes.c_void_p]
