@@ -49,11 +49,11 @@ def worst(
 def main() -> None:
     verdicts = VerdictTable.load(HERE / "verdict_table.json")
     timing = TimingTable.load(HERE / "timing_table.json")
-    spec = Spec()
     print("proof-gated brute-force submissions that violate the spec on the hidden suite")
     print(f"{'task':>36s} {'variant':>28s}   own distribution       rest of hidden suite")
     print(f"{'':>36s} {'':>28s}   xspec  /sum|Wx|  acc    xspec  /sum|Wx|  acc")
     for task in TRAIN + HELD_OUT:
+        spec = task.spec
         rng = np.random.default_rng(0)
         sim = Simulator(task, "proof-gated", verdicts, timing, locks(task), rng)
         out = brute_force(sim)

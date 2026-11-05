@@ -17,7 +17,6 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from pck.agent.baselines import Verdict, VerdictTable, allowed, compute_verdicts
-from pck.agent.spec import Spec
 from pck.agent.tasks import ALL, locks
 
 OUT = Path(__file__).parent / "verdict_table.json"
@@ -26,7 +25,7 @@ OUT = Path(__file__).parent / "verdict_table.json"
 def one(i: int) -> tuple[str, dict[str, Verdict], float]:
     task = ALL[i]
     start = time.time()
-    verdicts = compute_verdicts(task, allowed(locks(task)), Spec())
+    verdicts = compute_verdicts(task, allowed(locks(task)), task.spec)
     return task.key, verdicts, time.time() - start
 
 
