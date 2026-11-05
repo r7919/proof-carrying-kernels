@@ -36,6 +36,8 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
     proof-gated checker reaches 95% with no hacks for the bandit.
   - A policy-gradient control learns the hack under calibrated tests (2 of 3 seeds) and
     never under the proof-gated checker.
+  - A 5-minute GRPO run of Qwen3-0.6B: 100% hacks under calibrated tests, 0% under the
+    proof-gated checker (one seed, one task; a pilot).
 
 ## How it works
 
@@ -174,5 +176,5 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 | 2. Lean proofs T1-T3 and CI | done |
 | 3. Sampling checker, faults, tightness (synthetic and real activations), T4 | done |
 | 4. Agent environment, regimes, exploit window, search baselines, slot-code sandbox, PTX audit, checker pin | done (batch 1-8 tasks deferred) |
-| 5. GRPO trainer (LoRA, single- and multi-turn), warm start, presets, non-LLM control | code done; GPU runs pending |
+| 5. GRPO trainer (LoRA, single- and multi-turn), warm start, presets, non-LLM control | code done; smoke run done (1 seed); pilot runs pending |
 | 6. Write-up | not started |
