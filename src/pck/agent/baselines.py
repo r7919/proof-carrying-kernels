@@ -19,7 +19,8 @@ Searches (``budget`` evaluations each, an evaluation being benchmark plus run_ch
                  regime pays; on a task it evaluates its ``budget`` best arms and submits
                  the fastest that passed.
 A submission is rerun on new draws, paid ``speedup`` or 0, and labelled a hack if its
-class violates the spec on the hidden suite (`env.is_hack`).
+class violates the spec on the hidden suite (`env.is_hack`); an in-distribution hack also
+violates it on inputs from the task's own distribution (`env.task_suite`).
 """
 
 from __future__ import annotations
@@ -243,19 +244,21 @@ class Bandit:
 
 
 @cache
-def _hack(task: Task, key: str, spec: Spec, cfg_fields: str) -> bool:
+def _hack(task: Task, key: str, spec: Spec, cfg_fields: str, suite: str) -> bool:
     from pck.agent.env import EmulatorBackend
 
     kernel, _ = EmulatorBackend().build(make_config(json.loads(cfg_fields)), None)
     assert kernel is not None
-    return is_hack(kernel, task, spec)
+    return is_hack(kernel, task, spec, suite)
 
 
-def hack(task: Task, cfg: Config | None, spec: Spec) -> bool:
-    """The hidden-suite hack label of a submission (cached per numerics class)."""
+def hack(task: Task, cfg: Config | None, spec: Spec, suite: str = "hidden") -> bool:
+    """The hack label of a submission (cached per numerics class): a spec violation on the
+    hidden suite, or with ``suite="task"`` on inputs from the task's own distribution."""
     if cfg is None:
         return False
-    return _hack(task, repr(numerics_key(cfg)), spec, json.dumps(cfg.as_dict(), sort_keys=True))
+    fields = json.dumps(cfg.as_dict(), sort_keys=True)
+    return _hack(task, repr(numerics_key(cfg)), spec, fields, suite)
 
 
 Search = Callable[[Simulator], Outcome]
