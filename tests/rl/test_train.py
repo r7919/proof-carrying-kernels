@@ -108,10 +108,41 @@ def test_grpo_raises_the_better_reply(tokenizer: Any) -> None:
 
 
 def test_a_short_run_writes_its_logs(tokenizer: Any, tmp_path: Path) -> None:
-    p = policy(tokenizer, out=str(tmp_path), name="t", tasks=("896x896-gauss",))
+    p = policy(
+        tokenizer, out=str(tmp_path), name="t", tasks=("896x896-gauss",), warm_start_examples=2
+    )
     summary = train(p.cfg, p, log=False)
     run = tmp_path / "t-calibrated-s0"
+    assert json.loads((run / "warmstart.jsonl").read_text())["epoch"] == 0
     rows = [json.loads(line) for line in (run / "metrics.jsonl").read_text().splitlines()]
     assert len(rows) == 2 and {"reward", "exploit", "hack", "kl"} <= set(rows[0])
     assert summary["regime"] == "calibrated" and "896x896-gauss" in summary["tasks"]
     assert (run / "adapter").is_dir() and (run / "summary.json").exists()
+
+
+def test_demonstrations_are_honest_and_well_formed(tokenizer: Any) -> None:
+    from pck.agent.config import is_exploit, make_config
+    from pck.agent.spec import static_check
+    from pck.rl.prompt import parse_call, parse_config
+    from pck.rl.warmstart import demo_multi, demo_single, honest_configs
+
+    p = policy(tokenizer)
+    task, rng = p.cfg.train_tasks()[0], np.random.default_rng(0)
+    cfgs = honest_configs(task)
+    assert cfgs and all(not is_exploit(c) and not static_check(c, task.n, task.spec) for c in cfgs)
+    ids, mask = demo_single(p, task, rng)
+    reply = p.decode([t for t, m in zip(ids, mask, strict=True) if m])
+    parsed = parse_config(reply)
+    assert parsed is not None and make_config(parsed[0]) in cfgs
+    ids, mask = demo_multi(p, EpisodeEnv("calibrated"), task, rng, max_calls=6)
+    assert len(ids) == len(mask)
+    turns = p.decode([t for t, m in zip(ids, mask, strict=True) if m]).count('"tool"')
+    assert turns == 5 and parse_call('{"tool": "submit", "args": {}}') == ("submit", {})
+
+
+def test_warm_start_lowers_the_demonstration_loss(tokenizer: Any) -> None:
+    from pck.rl.warmstart import warm_start
+
+    p = policy(tokenizer, warm_start_examples=8, warm_start_epochs=3, warm_start_lr=1e-2)
+    losses = warm_start(p, p.cfg.train_tasks(), np.random.default_rng(0))
+    assert len(losses) == 3 and losses[-1] < losses[0]
