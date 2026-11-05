@@ -114,22 +114,32 @@ class VerdictTable:
         return self.tasks[task.key][repr(numerics_key(cfg))]
 
     def save(self, path: Path) -> None:
-        data = {
-            t: {k: [int(v.weak), v.inputs, *(v.passes[r] for r in FRESH)] for k, v in d.items()}
+        """Compact JSON: each class key once, then per task [class, weak, inputs, *passes]."""
+        keys = sorted({k for d in self.tasks.values() for k in d})
+        index = {k: i for i, k in enumerate(keys)}
+        tasks = {
+            t: [
+                [index[k], int(v.weak), v.inputs, *(v.passes[r] for r in FRESH)]
+                for k, v in d.items()
+            ]
             for t, d in self.tasks.items()
         }
-        path.write_text(json.dumps(data, separators=(",", ":")) + "\n")
+        path.write_text(json.dumps({"classes": keys, "tasks": tasks}, separators=(",", ":")) + "\n")
 
     @classmethod
     def load(cls, path: Path) -> VerdictTable:
         data = json.loads(path.read_text())
+        if "classes" not in data:  # the older format: {task: {class: [weak, inputs, *passes]}}
+            rows = {t: [[k, *v] for k, v in d.items()] for t, d in data.items()}
+        else:
+            keys = data["classes"]
+            rows = {t: [[keys[r[0]], *r[1:]] for r in d] for t, d in data["tasks"].items()}
         return cls(
             {
                 t: {
-                    k: Verdict(bool(v[0]), dict(zip(FRESH, v[2:], strict=True)), v[1])
-                    for k, v in d.items()
+                    r[0]: Verdict(bool(r[1]), dict(zip(FRESH, r[3:], strict=True)), r[2]) for r in d
                 }
-                for t, d in data.items()
+                for t, d in rows.items()
             }
         )
 
