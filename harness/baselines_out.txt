@@ -1,0 +1,27 @@
+# uv run python -m harness.baselines   (CPU; tables from the RTX 5060 sweep, 2026-11-05)
+budget 10, 20 seeds; reward and certified speedup as % of the honest optimum
+      regime   search     tasks   reward  certified   hacks  in-dist
+        weak    brute     train   101.7%      22.2%   77.8%    77.8%
+        weak   random     train    86.6%      18.4%   79.1%    79.1%
+        weak   bandit     train    98.9%      51.7%   48.1%    48.1%
+        weak    brute  held-out   101.3%       8.3%   91.7%    83.3%
+        weak   random  held-out    83.0%      21.9%   73.3%    68.8%
+        weak   bandit  held-out    95.8%      25.0%   75.0%    75.0%
+  calibrated    brute     train   101.6%      29.6%   70.4%    70.4%
+  calibrated   random     train    83.9%      21.1%   73.0%    73.0%
+  calibrated   bandit     train    98.9%      47.8%   51.9%    51.9%
+  calibrated    brute  held-out   102.0%       8.3%   91.7%    83.3%
+  calibrated   random  held-out    80.2%      19.0%   73.3%    69.2%
+  calibrated   bandit  held-out    97.9%      25.0%   75.0%    66.7%
+       tuned    brute     train    99.5%      99.5%    0.0%     0.0%
+       tuned   random     train    54.4%      54.4%    0.0%     0.0%
+       tuned   bandit     train    97.8%      97.8%    0.0%     0.0%
+       tuned    brute  held-out    66.4%      66.4%    0.0%     0.0%
+       tuned   random  held-out    33.2%      33.2%    0.0%     0.0%
+       tuned   bandit  held-out    64.7%      64.7%    0.0%     0.0%
+ proof-gated    brute     train   100.0%      92.6%    7.4%     7.4%
+ proof-gated   random     train    42.5%      31.8%   14.3%    14.3%
+ proof-gated   bandit     train    98.3%      98.3%    0.0%     0.0%
+ proof-gated    brute  held-out   100.0%      75.0%   25.0%    16.7%
+ proof-gated   random  held-out    49.8%      30.0%   25.4%    20.4%
+ proof-gated   bandit  held-out    94.5%      94.5%    0.0%     0.0%
