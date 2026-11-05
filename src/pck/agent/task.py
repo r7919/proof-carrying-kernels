@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from pck.fp import bf16
+
+if TYPE_CHECKING:
+    from pck.agent.spec import Spec
 
 Dist = Literal["gauss", "student-t", "outliers", "mixed-scale", "real"]
 
@@ -39,15 +42,32 @@ class Task:
     seed: int = 0
     source: str | None = None
     """For ``dist="real"``: "<capture name>/<layer>", e.g. "qwen2.5-0.5b-l12/down_proj"."""
+    h_spec: int = 64
+    """The error budget: the largest summation-tree height the task's spec admits."""
 
     def __post_init__(self) -> None:
         if (self.dist == "real") != (self.source is not None):
             raise ValueError("a task has a source exactly when its dist is 'real'")
+        if self.h_spec < 1:
+            raise ValueError("h_spec must be positive")
+
+    @property
+    def timing_key(self) -> str:
+        """Identifies the task's weights and input distribution (timing-table key; speed
+        does not depend on the error budget)."""
+        return f"{self.m}x{self.n}-{self.source or self.dist}"
 
     @property
     def key(self) -> str:
-        """Identifies the task's weights and input distribution (timing-table key)."""
-        return f"{self.m}x{self.n}-{self.source or self.dist}"
+        """Identifies the task, error budget included (verdict tables, manifests)."""
+        return self.timing_key + ("" if self.h_spec == 64 else f"-h{self.h_spec}")
+
+    @property
+    def spec(self) -> Spec:
+        """The accuracy spec at this task's error budget."""
+        from pck.agent.spec import Spec
+
+        return Spec(h_spec=self.h_spec)
 
     def _real(self) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.int64]]:
         from pck.agent.real import load
