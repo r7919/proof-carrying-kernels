@@ -1,6 +1,6 @@
 # About 10 minutes on an RTX 5060 with --compare (two regimes, ~4.5 min each plus eval):
-# one real layer where activation sparsity passes the calibrated test and is 11% faster
-# than the best honest kernel, single-turn configs, rewards from the tables.
+# one real layer where activation sparsity passes the calibrated test and, in the timing
+# table, is 11% faster than the best honest kernel; single-turn configs, rewards from the tables.
 name = "smoke"
 model = "Qwen/Qwen3-0.6B"
 lora_rank = 16
