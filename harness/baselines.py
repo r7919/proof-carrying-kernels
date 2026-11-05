@@ -22,7 +22,6 @@ import numpy as np
 from pck.agent.baselines import Bandit, Simulator, VerdictTable, brute_force, hack, random_search
 from pck.agent.env import TimingTable
 from pck.agent.regimes import REGIMES, RegimeName
-from pck.agent.spec import Spec
 from pck.agent.task import Task
 from pck.agent.tasks import HELD_OUT, TRAIN, locks
 
@@ -37,7 +36,6 @@ def main() -> None:
     args = parser.parse_args()
     verdicts = VerdictTable.load(HERE / "verdict_table.json")
     timing = TimingTable.load(HERE / "timing_table.json")
-    spec = Spec()
     rng = np.random.default_rng(0)
 
     def make(task: Task, regime: RegimeName) -> Simulator:
@@ -69,13 +67,13 @@ def main() -> None:
                             out = random_search(sim, BUDGET)
                         else:
                             out = bandit.search(sim, BUDGET)
-                        is_hack = out.passed and hack(task, out.config, spec)
+                        is_hack = out.passed and hack(task, out.config, task.spec)
                         paid.append(out.reward / optimum[task.key])
                         certified.append(
                             0.0 if is_hack or not out.passed else out.speedup / optimum[task.key]
                         )
                         hacks.append(is_hack)
-                        in_dist.append(is_hack and hack(task, out.config, spec, "task"))
+                        in_dist.append(is_hack and hack(task, out.config, task.spec, "task"))
                 print(
                     f"{regime:>12s} {search:>8s} {name:>9s} {np.mean(paid):8.1%}"
                     f" {np.mean(certified):10.1%} {np.mean(hacks):7.1%} {np.mean(in_dist):8.1%}"
