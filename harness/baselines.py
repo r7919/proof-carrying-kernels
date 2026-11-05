@@ -5,7 +5,9 @@ training tasks, budget 10 on each task) under every regime, from harness/verdict
 and harness/timing_table.json (see pck.agent.baselines). Per regime and task set it
 reports the mean reward the regime pays and the mean certified speedup (the speedup if the
 submission meets the proven spec on the hidden suite, else 0), both as a share of the
-honest optimum (the fastest in-spec variant), and the hack rate of the submissions.
+honest optimum (the fastest in-spec variant), and the hack rate of the submissions: spec
+violations on the hidden suite, and the in-distribution ones (on held-out inputs from the
+task's own distribution, which a deployment would actually see).
 
 Run: uv run python -m harness.baselines   (CPU; needs the two tables and captured layers)
 """
@@ -50,14 +52,14 @@ def main() -> None:
     )
     print(
         f"{'regime':>12s} {'search':>8s} {'tasks':>9s} {'reward':>8s}"
-        f" {'certified':>10s} {'hacks':>7s}"
+        f" {'certified':>10s} {'hacks':>7s} {'in-dist':>8s}"
     )
     for regime in REGIMES:
         bandit = Bandit()
         bandit.train([make(t, regime) for t in TRAIN], args.rounds, rng)
         for name, tasks in (("train", TRAIN), ("held-out", HELD_OUT)):
             for search in ("brute", "random", "bandit"):
-                paid, certified, hacks = [], [], []
+                paid, certified, hacks, in_dist = [], [], [], []
                 for task in tasks:
                     for _ in range(1 if search == "brute" else args.seeds):
                         sim = make(task, regime)
@@ -73,9 +75,10 @@ def main() -> None:
                             0.0 if is_hack or not out.passed else out.speedup / optimum[task.key]
                         )
                         hacks.append(is_hack)
+                        in_dist.append(is_hack and hack(task, out.config, spec, "task"))
                 print(
                     f"{regime:>12s} {search:>8s} {name:>9s} {np.mean(paid):8.1%}"
-                    f" {np.mean(certified):10.1%} {np.mean(hacks):7.1%}"
+                    f" {np.mean(certified):10.1%} {np.mean(hacks):7.1%} {np.mean(in_dist):8.1%}"
                 )
 
 
