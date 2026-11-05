@@ -6,7 +6,8 @@ weak test's fixed input and on fresh inputs, and record which regimes accept it
 task and skips tasks already in it, so an interrupted run resumes. Real tasks
 need the captured layers (uv run python -m harness.capture_layer).
 
-Run: uv run python -m harness.verdicts [--jobs 4]   (about half an hour on 4 cores)
+Run: uv run python -m harness.verdicts [--jobs 4]   (several CPU-hours on 4 cores; the
+largest shapes take over an hour each, so let it run in the background and resume)
 """
 
 from __future__ import annotations
