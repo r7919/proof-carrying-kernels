@@ -15,7 +15,9 @@
 //   SKIP    drop the columns past the last full tile of VEC * tpr
 //
 // The slot: pck_slot_term(w, x, j) returns the term added for column j. The default is the
-// exact product. Agent-written slot code replaces it by defining PCK_SLOT_FILE.
+// exact product. Agent-written slot code (pck.agent.sandbox) is included from PCK_SLOT_FILE
+// and defines PCK_SLOT_HAS_TERM when it replaces the term. PCK_VARIANT builds a single
+// instantiation (PCK_VEC, PCK_UNROLL, PCK_FLAGS) to keep sandbox compiles short.
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
@@ -27,7 +29,8 @@ namespace {
 
 #ifdef PCK_SLOT_FILE
 #include PCK_SLOT_FILE
-#else
+#endif
+#ifndef PCK_SLOT_HAS_TERM
 __device__ __forceinline__ float pck_slot_term(float w, float x, int64_t /*j*/) {
   return __fmul_rn(w, x);
 }
@@ -166,6 +169,13 @@ Launch pick_unroll(int unroll, int flags) {
   }
 }
 
+#ifdef PCK_VARIANT
+Launch pick(int vec, int unroll, int flags) {
+  if (vec != PCK_VEC || unroll != PCK_UNROLL || flags != PCK_FLAGS) return nullptr;
+  return launch<PCK_VEC, PCK_UNROLL, (PCK_FLAGS & 1) != 0, (PCK_FLAGS & 2) != 0,
+                (PCK_FLAGS & 4) != 0, (PCK_FLAGS & 8) != 0>;
+}
+#else
 Launch pick(int vec, int unroll, int flags) {
   switch (vec) {
     case 1: return pick_unroll<1>(unroll, flags);
@@ -175,6 +185,7 @@ Launch pick(int vec, int unroll, int flags) {
     default: return nullptr;
   }
 }
+#endif
 
 }  // namespace
 
