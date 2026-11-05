@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Proof-carrying kernels: runtime checksum checkers for GPU kernels with proven thresholds"
+type: software
+authors:
+  - given-names: Udaya Bhaskar
+    family-names: Cheepurupalli
+repository-code: "https://github.com/r7919/proof-carrying-kernels"
+version: 0.1.0
+date-released: 2026-11-05
+keywords:
+  - GPU kernels
+  - algorithm-based fault tolerance
+  - Lean 4
+  - floating-point error analysis
+  - reward hacking
