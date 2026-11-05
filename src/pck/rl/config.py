@@ -1,0 +1,119 @@
+"""Run configuration for GRPO training (TOML presets in pck/rl/configs/).
+
+Every knob of a run lives here, so a bigger run is a config change:
+  uv run python -m pck.rl.train --config smoke            (the 10-minute preset)
+  uv run python -m pck.rl.train --config pilot steps=400 regime=proof-gated
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass, fields, replace
+from pathlib import Path
+from typing import Any, Literal
+
+from pck.agent.regimes import REGIMES, RegimeName
+from pck.agent.task import Task
+from pck.agent.tasks import ALL
+
+PRESETS = Path(__file__).parent / "configs"
+EnvName = Literal["table", "emulator", "cuda"]
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    name: str = "smoke"
+    model: str = "Qwen/Qwen3-0.6B"
+    """Hugging Face model id of the base policy."""
+    lora_rank: int = 16
+    lora_alpha: int = 32
+    tasks: tuple[str, ...] = ("896x896-qwen2.5-0.5b-l12/o_proj",)
+    """Training tasks, by `Task.key`."""
+    eval_tasks: tuple[str, ...] = ()
+    """Tasks evaluated after training (by key; default: the training tasks)."""
+    regime: RegimeName = "calibrated"
+    env: EnvName = "table"
+    """table: verdict and timing tables (fast; config-only, single-turn); emulator: full
+    episodes on the CPU model; cuda: full episodes on the GPU (needed for slot code)."""
+    turns: int = 1
+    """1: the policy writes one config and the episode is compiled and submitted; >1: a
+    multi-turn tool-calling episode of at most this many calls."""
+    slot_code: bool = False
+    """Offer the slot-code argument (needs env = "cuda")."""
+    steps: int = 60
+    group: int = 8
+    """Trajectories per prompt (GRPO group size)."""
+    prompts_per_step: int = 1
+    lr: float = 2e-4
+    kl: float = 0.02
+    """Weight of the KL penalty to the base model."""
+    temperature: float = 1.0
+    max_new_tokens: int = 160
+    thinking: bool = False
+    """Let models with a thinking mode (Qwen3) think before answering."""
+    time_limit_min: float | None = 10.0
+    """Stop training after this many minutes (None: run all steps)."""
+    eval_samples: int = 32
+    seed: int = 0
+    out: str = "runs"
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
+    gradient_checkpointing: bool = False
+
+    def __post_init__(self) -> None:
+        if self.regime not in REGIMES:
+            raise ValueError(f"unknown regime {self.regime!r}")
+        if self.turns < 1:
+            raise ValueError("turns must be at least 1")
+        if self.slot_code and self.env != "cuda":
+            raise ValueError("slot code needs env = 'cuda'")
+        if self.env == "table" and self.turns != 1:
+            raise ValueError("the table env is single-turn: set turns = 1 or env = 'emulator'")
+        for key in self.tasks + self.eval_tasks:
+            task_by_key(key)
+
+    def train_tasks(self) -> list[Task]:
+        return [task_by_key(k) for k in self.tasks]
+
+    def test_tasks(self) -> list[Task]:
+        return [task_by_key(k) for k in (self.eval_tasks or self.tasks)]
+
+
+def task_by_key(key: str) -> Task:
+    for task in ALL:
+        if task.key == key:
+            return task
+    raise ValueError(f"no task {key!r}; see pck.agent.tasks.ALL")
+
+
+def _coerce(name: str, value: str) -> Any:
+    """A command-line override's value, typed like the field's default."""
+    default = getattr(RunConfig(), name)
+    if isinstance(default, bool):
+        return value.lower() in ("1", "true", "yes")
+    if isinstance(default, tuple):
+        return tuple(v for v in value.split(",") if v)
+    if isinstance(default, int):
+        return int(value)
+    if isinstance(default, float) or default is None:
+        return None if value.lower() == "none" else float(value)
+    return value
+
+
+def load(preset: str | Path, overrides: list[str] | None = None) -> RunConfig:
+    """A preset (name in pck/rl/configs or a path) with ``key=value`` overrides."""
+    path = Path(preset)
+    if not path.suffix:
+        path = PRESETS / f"{preset}.toml"
+    data: dict[str, Any] = tomllib.loads(path.read_text())
+    names = {f.name for f in fields(RunConfig)}
+    unknown = set(data) - names
+    if unknown:
+        raise ValueError(f"unknown config keys {sorted(unknown)} in {path}")
+    data = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
+    cfg = RunConfig(**data)
+    for item in overrides or []:
+        key, _, value = item.partition("=")
+        if key not in names:
+            raise ValueError(f"unknown config key {key!r}")
+        cfg = replace(cfg, **{key: _coerce(key, value)})
+    return cfg
