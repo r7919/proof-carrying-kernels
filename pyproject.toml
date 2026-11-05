@@ -66,12 +66,16 @@ python_version = "3.11"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "transformers", "transformers.*"]
+module = ["torch", "torch.*", "transformers", "transformers.*", "peft", "peft.*"]
 ignore_missing_imports = true
 
+# Code on the optional GPU and RL dependencies: parts of torch are unannotated, and in
+# CI (base install only) the dependencies are absent, so they type as Any there.
 [[tool.mypy.overrides]]
-module = ["pck.cuda.*"]
-disallow_untyped_calls = false  # parts of torch are unannotated
+module = ["pck.cuda.*", "pck.agent.sandbox", "pck.rl.train", "pck.rl.warmstart"]
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 module = ["tests.*", "harness.*"]
@@ -88,7 +92,9 @@ filterwarnings = ["error"]
 [tool.coverage.run]
 source = ["pck"]
 branch = true
-omit = ["*/pck/cuda/*"]  # GPU code is exercised by tests/gpu on a GPU machine, not in CI
+# Code that needs the GPU, nvcc or the rl extra, which CI does not install: exercised by
+# tests/gpu, tests/agent/test_sandbox.py and tests/rl on a machine that has them.
+omit = ["*/pck/cuda/*", "*/pck/agent/sandbox.py", "*/pck/rl/train.py", "*/pck/rl/warmstart.py"]
 
 [tool.coverage.report]
 show_missing = true
