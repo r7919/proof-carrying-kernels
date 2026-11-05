@@ -22,3 +22,6 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Training runs (adapters are large; copy results worth keeping into harness/)
+runs/
