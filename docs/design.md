@@ -154,8 +154,28 @@ slow, so episodes use two tables built ahead of time:
 - the bit-exact CPU model of both templates.
 
 The search baselines go one step further and sample verdicts per numerics class from
-`harness/verdict_table.json`. A full episode takes 5-21 s on CPU. Compiling agent-written
-slot code needs the CUDA backend and is not included yet.
+`harness/verdict_table.json`. A full config-only episode takes 5-21 s on CPU.
+
+**Slot code** (`sandbox.py`, the `CudaBackend`). The agent's CUDA replaces the template's
+hooks: `pck_slot_term(w, x, j)` (the term added for column j) and, in the column-major
+template, `pck_slot_use(x, j)` (whether column j's weights are read at all, which is
+where input-dependent shortcuts pay). Such variants run on the GPU:
+
+- A static filter rejects anything but plain device code: no preprocessor, inline
+  assembly, kernels, host code, `extern` or CUDA API calls.
+- nvcc builds the one template instantiation as a shared library, in a subprocess with a
+  timeout. Builds take about 2 s, and compiler errors go back to the agent with paths
+  stripped. Builds and their errors are cached by source hash.
+- The library runs in a separate worker process with its own CUDA context. A hang (a call
+  timeout), a crash or a launch error kills only the worker. The kernel then returns NaN,
+  which every regime rejects and the hidden suite counts as out of spec.
+- Timed runs are checked runs. Each call times the kernel `reps` times, interleaved with
+  cuBLAS on a cold L2. It returns the output only if every timed run gave the same bits.
+  `benchmark` and `submit` pay the median speedup of the calls whose outputs the regime
+  judged, so a kernel cannot take a different path when it is timed.
+
+The slot sees only `w`, `x` and `j`. The signs the checker uses are drawn after the kernel
+has run, so nothing the slot can read helps it guess them.
 
 ## Design decisions and findings
 
