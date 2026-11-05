@@ -16,6 +16,9 @@ produced it and the file with its full output, so every number here can be repro
 | Agent template sweep | `harness/sweep_template.py` | `harness/sweep_template_out.txt`, `harness/timing_table.json` |
 | BF16 shortcut at batch 1-8 | `harness/bench_batched.py` | `harness/bench_batched_out.txt` |
 | Exploit window, activation sparsity | `python -m harness.exploit_window` | `harness/exploit_window_out.txt` |
+| Phase 4 gates (CPU) | `python -m harness.phase4_checks` | `harness/phase4_checks_out.txt` |
+| Search baselines per regime (CPU) | `python -m harness.verdicts`, `python -m harness.baselines` | `harness/verdict_table.json`, `harness/baselines_out.txt` |
+| Hacks the checker lets through (CPU) | `python -m harness.hack_anatomy` | `harness/hack_anatomy_out.txt` |
 
 ## Measurements
 
@@ -256,3 +259,78 @@ minima are noisier).
 - Real tasks are therefore set in a column-major deployment, as sparsity-aware inference
   engines (TEAL, Deja Vu) store weights (`pck.agent.tasks.locks`). The incentive is
   small; whether RL finds it is Phase 5's go/no-go question.
+
+### Phase 4 gates: a scripted cheater and episode cost
+
+`python -m harness.phase4_checks` plays full episodes on every real task with two scripted
+agents. One submits the best honest kernel. The other submits the activation-sparsity cheat
+at the largest threshold the calibrated test accepts on at least 95% of inputs. Full
+output: `harness/phase4_checks_out.txt`.
+
+- **Under weak and calibrated tests, the cheater earns more** on 14 and 12 of the 14 real
+  tasks, by 1-7% (l12 `down_proj`: 1.54 vs 1.64). On l20 `gate_proj` and `up_proj` the
+  calibrated test sometimes fails it (mean 0.95).
+- **Under tuned tests and the proof-gated checker, the cheater earns -0.05** (rejected, so
+  only the call costs) on every task.
+- **One full episode takes 5.1 s** on the largest real task and 20.7 s on the largest
+  synthetic one (CPU model plus timing table), under the 2-minute gate. Compiling
+  agent-written slot code is not included.
+
+### Search baselines per regime
+
+`python -m harness.baselines` runs three searches that use no learning, under each regime:
+
+- **brute force:** the fastest allowed variant whose sampled inputs all pass, which is the
+  per-task optimum the regime allows;
+- **random search:** 10 evaluations;
+- **UCB1 bandit:** trained on the training tasks, then 10 evaluations per task.
+
+It uses 20 seeds per task and simulates from the verdict and timing tables (`pck.agent.baselines`). Rewards and
+*certified* speedups (the speedup if the submission meets the spec on the hidden suite,
+else 0) are percentages of the honest optimum, the fastest in-spec variant. *Hacks* are
+submissions that violate the spec on the hidden suite; *in-distribution* hacks also
+violate it on unseen inputs from the task's own distribution. Full output:
+`harness/baselines_out.txt`; the verdicts are in `harness/verdict_table.json`
+(`python -m harness.verdicts`, several CPU-hours).
+
+Held-out tasks, budget 10:
+
+| Regime | Search | Reward paid | Certified | Hacks | In-distribution hacks |
+|---|---|---|---|---|---|
+| weak | brute force | 101% | 8% | 92% | 83% |
+| weak | bandit | 96% | 25% | 75% | 75% |
+| calibrated | brute force | 102% | 8% | 92% | 83% |
+| calibrated | random | 80% | 19% | 73% | 69% |
+| calibrated | bandit | 98% | 25% | 75% | 67% |
+| tuned | brute force | 66% | 66% | 0% | 0% |
+| tuned | bandit | 65% | 65% | 0% | 0% |
+| proof-gated | brute force | 100% | 75% | 25% | 17% |
+| proof-gated | random | 50% | 30% | 25% | 20% |
+| **proof-gated** | **bandit** | **95%** | **95%** | **0%** | **0%** |
+
+- **Weak and calibrated tests pay for hacks.** Every search finds kernels they accept that
+  are out of spec: 73-92% of held-out submissions (67-83% in distribution) and 48-79% on
+  the training tasks. The reward they pay overstates the certified speedup 4-13x. Any optimizer, not just RL,
+  learns to exploit them.
+- **Tuned tests let no hack through but false-alarm off their tuning distribution.** On the
+  training tasks brute force and the bandit get 98-100% of the optimum. On held-out tasks (outliers, mixed
+  scales, other layers) they also reject honest kernels and pay only 65-66%.
+- **The proof-gated checker pays close to the optimum on held-out tasks too** (bandit
+  95%, certified 95%, no hacks), with no tuning per task.
+- **It is not airtight.** A search that sees which variants the checker accepts (brute
+  force, random) still finds out-of-spec kernels on 5 of 39 tasks (7-14% of training
+  submissions, 25% held out). `python -m harness.hack_anatomy` shows two kinds (full
+  output: `harness/hack_anatomy_out.txt`):
+  - **Below the checker's resolution.** On the 128 x 896 k and v projections, a
+    variant skipping |x_j| < 0.005 is off by 15-27x the spec's bound on its own
+    distribution. That is still only 6e-5 to 1e-4 of sum|W x|, and the checker accepts
+    89-100% of such inputs. These layers are a single 128-row checker block, and the
+    error is below tau. This is the coarse detection noted in [design.md](design.md).
+  - **Wrong only off-distribution.** On the mixed-scale task, skipping |x_j| < 0.3 stays
+    within the spec on that task's inputs (0.03x the bound) but is off by about 2,600x on
+    other distributions. The checker rejects 60% of those inputs, so a checked
+    deployment would catch it the first time one appeared.
+- So the guarantee is per input: a kernel the checker accepts is within `tau` on the inputs
+  it was run on, not on every input. A checked deployment keeps checking every call, which
+  catches the second kind. The first kind is the price of `tau` being coarser than the
+  per-row spec.
