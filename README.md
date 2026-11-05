@@ -1,8 +1,6 @@
 # proof-carrying-kernels
 
-[![Python](https://github.com/r7919/proof-carrying-kernels/actions/workflows/python.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/python.yml)
-[![Lean](https://github.com/r7919/proof-carrying-kernels/actions/workflows/lean.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/lean.yml)
-[![CUDA](https://github.com/r7919/proof-carrying-kernels/actions/workflows/cuda.yml/badge.svg)](https://github.com/r7919/proof-carrying-kernels/actions/workflows/cuda.yml)
+[Design](docs/design.md) · [Results](docs/results.md) · [Runbook](docs/runbook.md)
 
 Proven accuracy checks for GPU inference kernels, to catch silent hardware faults and to stop
 RL agents that write kernels from reward hacking.
@@ -178,3 +176,8 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 | 4. Agent environment, regimes, exploit window, search baselines, slot-code sandbox, PTX audit, checker pin | done (batch 1-8 tasks deferred) |
 | 5. GRPO trainer (LoRA, single- and multi-turn), warm start, presets, non-LLM control | code done; smoke run done (1 seed); pilot runs pending |
 | 6. Write-up | not started |
+
+## Citation
+
+If you use this work, please cite it with the metadata in [CITATION.cff](CITATION.cff)
+(GitHub shows it under *Cite this repository*).
