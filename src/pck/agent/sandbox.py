@@ -55,6 +55,7 @@ COMPILE_TIMEOUT = 120.0  # s
 CALL_TIMEOUT = 30.0  # s per kernel call (all its timed reps)
 START_TIMEOUT = 180.0  # s for the worker to start and upload W
 REPS = 10
+NVCC_FLAGS = ("-O3", "--fmad=false", "-std=c++17", "-shared", "-Xcompiler", "-fPIC")
 
 _FORBIDDEN = (
     (re.compile(r"#"), "preprocessor directives are not allowed"),
@@ -156,7 +157,8 @@ def compile_variant(
     source, header = _source(cfg, slot)
     arch = os.environ.get("PCK_CUDA_ARCH", "native")
     deps = "".join((CSRC / f).read_text() for f in ("template_kernel.cu", "column_kernel.cu"))
-    key = hashlib.sha256("\0".join([source, header or "", arch, deps]).encode()).hexdigest()
+    parts = [source, header or "", arch, deps, " ".join(NVCC_FLAGS), "isystem"]
+    key = hashlib.sha256("\0".join(parts).encode()).hexdigest()  # flags too
     out = cache_dir() / "slots" / key[:24]
     lib, err = out / "variant.so", out / "errors.txt"
     if lib.exists():
@@ -176,12 +178,7 @@ def compile_variant(
             # math declarations otherwise clash with glibc >= 2.41's.
             "-isystem",
             str(cuda_include),
-            "-O3",
-            "--fmad=false",
-            "-std=c++17",
-            "-shared",
-            "-Xcompiler",
-            "-fPIC",
+            *NVCC_FLAGS,
             "-cudart",
             "shared",
             f"-arch={arch}",
