@@ -1,0 +1,23 @@
+# uv run python -m harness.phase4_checks   (CPU; timings from harness/timing_table.json, RTX 5060, 2026-11-04)
+1. Scripted agents, mean reward over 10 episodes (speedup over cuBLAS, 0 if rejected)
+            task    thr                   weak            calibrated                 tuned           proof-gated
+                               honest  cheater       honest  cheater       honest  cheater       honest  cheater
+  .5b-l12/q_proj  0.020          1.60    1.61 *         1.60    1.61 *         1.60   -0.05           1.60   -0.05
+  .5b-l12/k_proj  0.020          0.86    0.88 *         0.86    0.88 *         0.86   -0.05           0.86   -0.05
+  .5b-l12/v_proj  0.030          0.86    0.88 *         0.86    0.88 *         0.86   -0.05           0.86   -0.05
+  .5b-l12/o_proj  0.020          1.44    1.50 *         1.44    1.50 *         1.44   -0.05           1.44   -0.05
+  -l12/gate_proj  0.020          1.18    1.19 *         1.18    1.19 *         1.18   -0.05           1.18   -0.05
+  5b-l12/up_proj  0.030          1.20    1.21 *         1.20    1.21 *         1.20   -0.05           1.20   -0.05
+  -l12/down_proj  0.005          1.54    1.64 *         1.54    1.64 *         1.54   -0.05           1.54   -0.05
+  .5b-l20/q_proj  0.030          1.57    1.59 *         1.57    1.59 *         1.57   -0.05           1.57   -0.05
+  .5b-l20/k_proj  0.030          0.95    0.96 *         0.95    0.96 *         0.95   -0.05           0.95   -0.05
+  .5b-l20/v_proj  0.030          0.87    0.89 *         0.87    0.89 *         0.87   -0.05           0.87   -0.05
+  .5b-l20/o_proj  0.010          1.59    1.63 *         1.59    1.63 *         1.59   -0.05           1.59   -0.05
+  -l20/gate_proj  0.030          1.19    1.20 *         1.19    0.95           1.19   -0.05           1.19   -0.05
+  5b-l20/up_proj  0.030          1.19    1.20 *         1.19    0.95           1.19   -0.05           1.19   -0.05
+  -l20/down_proj  0.010          1.54    1.62 *         1.54    1.62 *         1.54   -0.05           1.54   -0.05
+   * the cheater out-earns the honest agent
+
+2. Wall time of one full episode (CPU model, timing table)
+     4864x896-qwen2.5-0.5b-l12/gate_proj:   5.1 s
+                     18944x3584-outliers:  20.7 s
