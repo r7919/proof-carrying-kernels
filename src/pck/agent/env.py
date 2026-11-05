@@ -72,7 +72,7 @@ def _timed(kernel: Kernel | None) -> TimedKernel | None:
 
 
 def task_key(task: Task) -> str:
-    return task.key
+    return task.timing_key
 
 
 @dataclass
@@ -207,7 +207,7 @@ class Episode:
         if regime == "proof-gated":
             verify_pinned()  # never certify with a checker other than the pinned one
         self.task, self.regime, self.timing = task, regime, timing
-        self.spec = spec or Spec()
+        self.spec = spec or task.spec
         self.backend = backend or EmulatorBackend()
         self.rng = np.random.default_rng(seed)
         self.call_cost, self.max_calls = call_cost, max_calls
