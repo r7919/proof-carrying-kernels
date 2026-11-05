@@ -192,6 +192,10 @@ slot code needs the CUDA backend and is not included yet.
   documented, so their tree height is unknown.
 - All GPU measurements are from one laptop GPU (RTX 5060, WSL2); absolute numbers will
   differ on data-centre GPUs.
+- In the agent environment, a search that sees the checker's verdicts still finds a few
+  out-of-spec kernels the checker accepts: errors below `tau` on layers that fill one
+  checker block, and kernels that are right on the task's inputs but not on others
+  (results: search baselines). The checker certifies the inputs it ran on, not all inputs.
 - Real activations come from one small model (Qwen2.5-0.5B). On it, fixed-tolerance
   tests against an FP64 reference also raise no false alarms and catch every planted
   shortcut; the checker's advantage there is cost and a guarantee for all inputs, not
