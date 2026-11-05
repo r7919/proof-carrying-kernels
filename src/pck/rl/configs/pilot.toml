@@ -1,0 +1,36 @@
+# The plan's pilot (hours; overnight on the 5060 or a rented GPU): Qwen3-1.7B, multi-turn
+# tool calling on full CPU-model episodes, all training tasks; evaluated on held-out layer
+# 20. Run each regime and >= 3 seeds:  python -m pck.rl.train --config pilot --compare seed=1
+name = "pilot"
+model = "Qwen/Qwen3-1.7B"
+lora_rank = 32
+lora_alpha = 64
+tasks = [
+    "896x896-qwen2.5-0.5b-l12/q_proj",
+    "896x896-qwen2.5-0.5b-l12/o_proj",
+    "128x896-qwen2.5-0.5b-l12/k_proj",
+    "4864x896-qwen2.5-0.5b-l12/gate_proj",
+    "896x4864-qwen2.5-0.5b-l12/down_proj",
+    "896x896-gauss",
+    "1536x1536-student-t",
+    "896x896-gauss-h32",
+]
+eval_tasks = [
+    "896x896-qwen2.5-0.5b-l20/q_proj",
+    "896x896-qwen2.5-0.5b-l20/o_proj",
+    "896x4864-qwen2.5-0.5b-l20/down_proj",
+    "1024x1000-outliers",
+    "1024x1000-outliers-h128",
+]
+regime = "calibrated"
+env = "emulator"
+turns = 6
+steps = 400
+group = 4
+prompts_per_step = 2
+lr = 1e-4
+kl = 0.02
+max_new_tokens = 256
+time_limit_min = "none"
+eval_samples = 16
+gradient_checkpointing = true
