@@ -181,3 +181,25 @@ def test_locked_layout_is_filled_in_and_enforced() -> None:
     assert ep.cfg == ColumnConfig(splits=16)  # layout filled in; skip_tail not a column field
     out = ep.call("write_kernel", {"config": {"layout": "row"}})
     assert out == "invalid config: layout is fixed to 'col' in this task"
+
+
+def test_proof_gated_passes_carry_a_manifest() -> None:
+    ep = episode("proof-gated")
+    play(ep, HONEST)
+    assert ep.result is not None and ep.result.passed
+    cert = ep.result.manifest
+    assert cert is not None and cert.problems() == []
+    assert cert.config == HONEST.as_dict() and cert.spec["h_spec"] == 64
+    assert cert.speedup == round(ep.result.speedup, 4)
+    calibrated = episode("calibrated")
+    play(calibrated, HONEST)
+    assert calibrated.result is not None and calibrated.result.manifest is None
+
+
+def test_proof_gated_episodes_need_the_pinned_checker(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pck.manifest
+
+    monkeypatch.setattr(pck.manifest, "checker_hash", lambda: "0" * 64)
+    with pytest.raises(pck.manifest.CheckerMismatch):
+        episode("proof-gated")
+    episode("calibrated")  # other regimes certify nothing

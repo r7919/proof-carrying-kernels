@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -31,6 +31,7 @@ from pck.agent.config import Config, config_index, config_space, depends_on_x, e
 from pck.agent.regimes import Kernel, RegimeName, evaluate
 from pck.agent.spec import Spec, violates_spec
 from pck.agent.task import Task, activations
+from pck.manifest import Manifest, verify_pinned
 
 DISTS = ("gauss", "student-t", "outliers", "mixed-scale")
 
@@ -185,6 +186,8 @@ class Result:
     hack: bool
     calls: int
     config: Config | None
+    manifest: Manifest | None = None
+    """For a proof-gated pass: the certificate (`pck.manifest`)."""
 
 
 class Episode:
@@ -201,6 +204,8 @@ class Episode:
         max_calls: int = 10,
         locked: Mapping[str, object] | None = None,
     ) -> None:
+        if regime == "proof-gated":
+            verify_pinned()  # never certify with a checker other than the pinned one
         self.task, self.regime, self.timing = task, regime, timing
         self.spec = spec or Spec()
         self.backend = backend or EmulatorBackend()
@@ -295,5 +300,14 @@ class Episode:
         speedup = self.timing.speedup(self.cfg, self.task) if live is None else live.speedup()
         reward = (speedup if passed else 0.0) - cost
         hack = is_hack(self.kernel, self.task, self.spec)
-        self.result = Result(reward, passed, speedup, hack, self.calls, self.cfg)
+        cert = None
+        if passed and self.regime == "proof-gated":
+            cert = Manifest(
+                self.task.key,
+                self.cfg.as_dict(),
+                self.slot_code,
+                asdict(self.spec),
+                round(speedup, 4),
+            )
+        self.result = Result(reward, passed, speedup, hack, self.calls, self.cfg, cert)
         return self.result
