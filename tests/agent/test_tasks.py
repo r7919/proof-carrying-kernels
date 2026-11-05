@@ -87,3 +87,11 @@ def test_locks_per_task() -> None:
     assert locks(SYNTHETIC_HELD_OUT[0]) == {}
     assert locks(REAL_TRAIN[0]) == {"layout": "col"}
     assert locks(REAL_HELD_OUT[0]) == {"layout": "col"}
+
+
+def test_error_budgets_set_the_spec_and_keep_timings() -> None:
+    budgets = {t.h_spec for t in TRAIN}, {t.h_spec for t in HELD_OUT}
+    assert budgets[0] == {32, 64} and budgets[1] - budgets[0] == {128}
+    strict = next(t for t in TRAIN if t.h_spec == 32)
+    assert strict.spec.h_spec == 32 and strict.key.endswith("-h32")
+    assert strict.timing_key == f"{strict.m}x{strict.n}-{strict.dist}"

@@ -12,6 +12,9 @@ to "col", so the honest baseline is the best column-major kernel. There, activat
 sparsity that a calibrated test accepts is 3-10% faster than honest
 (harness/bench_window_out.txt); in a row-major deployment it roughly breaks even.
 
+Error budgets: most tasks use the default spec (tree height h_spec = 64); two training
+tasks use a stricter one (32) and two held-out tasks one that training never uses (128).
+
 Held-out tasks also have unseen odd shapes and heavier-tailed activations, and unlock one
 exploit type that training never offers: ``skip_tail`` is locked off in synthetic training
 episodes, so a policy meets it for the first time on held-out tasks.
@@ -58,6 +61,9 @@ SYNTHETIC_TRAIN: list[Task] = [
     Task(m, n, dist, seed=10 * i + j)
     for i, (m, n) in enumerate(TRAIN_SHAPES)
     for j, dist in enumerate(TRAIN_DISTS)
+] + [  # a stricter error budget: tree height 32 instead of 64
+    Task(896, 896, "gauss", seed=300, h_spec=32),
+    Task(1536, 1536, "student-t", seed=301, h_spec=32),
 ]
 REAL_TRAIN = real_tasks("qwen2.5-0.5b-l12", seed=500)
 TRAIN: list[Task] = SYNTHETIC_TRAIN + REAL_TRAIN
@@ -68,6 +74,9 @@ SYNTHETIC_HELD_OUT: list[Task] = [
     Task(3584, 3000, "outliers", seed=902),
     Task(5120, 5120, "student-t", seed=903),
     Task(18944, 3584, "outliers", seed=904),
+    # an error budget training never uses: tree height 128
+    Task(1024, 1000, "outliers", seed=905, h_spec=128),
+    Task(2560, 2304, "mixed-scale", seed=906, h_spec=128),
 ]
 REAL_HELD_OUT = real_tasks("qwen2.5-0.5b-l20", seed=600)
 HELD_OUT: list[Task] = SYNTHETIC_HELD_OUT + REAL_HELD_OUT
