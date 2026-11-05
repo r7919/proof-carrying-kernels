@@ -48,6 +48,14 @@ def violations(ptx: str, allowed: set[str]) -> dict[str, int]:
     }
 
 
+def system_include(nvcc: str) -> list[str]:
+    """CUDA's headers as system headers, as torch extensions build them: CUDA 12.8's math
+    declarations otherwise clash with glibc >= 2.41's."""
+    found = shutil.which(nvcc) or nvcc
+    include = Path(found).resolve().parents[1] / "include"
+    return ["-isystem", str(include)] if include.is_dir() else []
+
+
 def check_flags(ext: str) -> list[str]:
     """Problems with the extension's CUDA flags (the source of pck/cuda/_ext.py)."""
     problems = []
@@ -70,7 +78,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         for name in TRUSTED:
             out = Path(tmp) / f"{name}.ptx"
-            cmd = [args.nvcc, *FLAGS, f"-arch={args.arch}", "-ptx", str(CSRC / name), "-o"]
+            cmd = [args.nvcc, *FLAGS, *system_include(args.nvcc), f"-arch={args.arch}"]
+            cmd += ["-ptx", str(CSRC / name), "-o"]
             subprocess.run([*cmd, str(out)], check=True)
             ptx = out.read_text()
             bad = violations(ptx, ALLOWED.get(name, set()))
