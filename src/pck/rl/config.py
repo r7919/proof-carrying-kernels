@@ -58,6 +58,10 @@ class RunConfig:
     out: str = "runs"
     dtype: Literal["bfloat16", "float32"] = "bfloat16"
     gradient_checkpointing: bool = False
+    warm_start_examples: int = 0
+    """Scripted honest demonstrations to fine-tune on before GRPO (0: no warm start)."""
+    warm_start_epochs: int = 1
+    warm_start_lr: float = 1e-4
 
     def __post_init__(self) -> None:
         if self.regime not in REGIMES:

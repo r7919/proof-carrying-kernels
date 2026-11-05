@@ -11,8 +11,12 @@ with a k3 KL penalty to the base model (the LoRA adapter switched off). Only the
 own tokens are trained; prompts and tool replies are masked out. Multi-turn trajectories
 keep the exact tokens the policy generated from, so training sees what sampling saw.
 
-Writes runs/<name>-<regime>-s<seed>/: config.json, metrics.jsonl (one line per step),
-samples.jsonl (one reply per step), summary.json (final evaluation) and the adapter.
+With ``warm_start_examples > 0`` the adapter is first fine-tuned on scripted honest
+demonstrations (`pck.rl.warmstart`).
+
+Writes runs/<name>-<regime>-s<seed>/: config.json, warmstart.jsonl (if any), metrics.jsonl
+(one line per step), samples.jsonl (one reply per step), summary.json (final evaluation)
+and the adapter.
 """
 
 from __future__ import annotations
@@ -285,9 +289,20 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
     out = run_dir(cfg)
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(asdict(cfg), indent=2) + "\n")
+    tasks = cfg.train_tasks()
+    if cfg.warm_start_examples:
+        from pck.rl.warmstart import warm_start
+
+        with open(out / "warmstart.jsonl", "w") as f:
+
+            def note(row: dict[str, float]) -> None:
+                f.write(json.dumps(row) + "\n")
+                if log:
+                    print(f"warm start epoch {row['epoch']:.0f}: loss {row['loss']:.4f}")
+
+            warm_start(policy, tasks, rng, note)
     params = [p for p in policy.model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=cfg.lr, weight_decay=0.0)
-    tasks = cfg.train_tasks()
     start = time.time()
     with open(out / "metrics.jsonl", "w") as metrics, open(out / "samples.jsonl", "w") as samples:
         for step in range(cfg.steps):
