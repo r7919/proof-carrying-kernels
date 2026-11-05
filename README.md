@@ -181,3 +181,7 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 
 If you use this work, please cite it with the metadata in [CITATION.cff](CITATION.cff)
 (GitHub shows it under *Cite this repository*).
+
+## License
+
+[Apache License 2.0](LICENSE).
