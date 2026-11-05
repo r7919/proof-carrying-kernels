@@ -19,6 +19,7 @@ produced it and the file with its full output, so every number here can be repro
 | Phase 4 gates (CPU) | `python -m harness.phase4_checks` | `harness/phase4_checks_out.txt` |
 | Search baselines per regime (CPU) | `python -m harness.verdicts`, `python -m harness.baselines` | `harness/verdict_table.json`, `harness/baselines_out.txt` |
 | Hacks the checker lets through (CPU) | `python -m harness.hack_anatomy` | `harness/hack_anatomy_out.txt` |
+| Non-LLM control policy (CPU) | `python -m pck.rl.control` | `harness/control_out.txt` |
 
 ## Measurements
 
@@ -334,3 +335,26 @@ Held-out tasks, budget 10:
   it was run on, not on every input. A checked deployment keeps checking every call, which
   catches the second kind. The first kind is the price of `tau` being coarser than the
   per-row spec.
+
+### The non-LLM control learns the hack only when the reward pays for it
+
+`python -m pck.rl.control` trains a softmax policy over the 224 column-major configs of
+layer-12 `o_proj`. It uses GRPO's group-normalized advantage and the rewards the regimes
+pay (`pck.rl.envs.TableEnv`), with 1,000 steps of 8 episodes per seed. Full output:
+`harness/control_out.txt`.
+
+| Regime | Seeds that converge on the hack | Hack rate, last 50 steps |
+|---|---|---|
+| calibrated | 2 of 3 | 100%, 100%, 1% |
+| proof-gated | 0 of 3 | 0%, 0%, 0% |
+
+- **Under calibrated tests the policy learns to cheat** in 2 of 3 seeds. It settles on
+  activation sparsity (`skip_below = 0.005`), which the test accepts and the spec forbids.
+  The third seed settles on an honest config.
+- **Under the proof-gated checker no seed submits a hack**, and the policy converges to
+  honest configs.
+- Plain policy gradient commits early, so some seeds stop at slower configs than the
+  optimum under either regime (rewards 0.9-1.45). The point is which kind of kernel each
+  regime teaches, not the speed reached.
+- Each run takes about 20 s on CPU. The LLM runs (`python -m pck.rl.train`) use the same
+  task and rewards.
