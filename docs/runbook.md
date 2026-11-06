@@ -78,6 +78,22 @@ uv run python -m pck.rl.control           # the non-LLM control policy
 
 On the GPU, `harness/bench_window.py` re-times the exploit window at 200 interleaved reps.
 
+## The sampling check inside vLLM
+
+```bash
+uv tool install vllm --with-editable .            # the plugin, in vLLM's environment
+uv run python -m harness.bench_vllm_checker       # cost per token and detection
+PCK_CHECK_SAMPLING=1 PCK_CHECK_LOG=$PWD/check.jsonl vllm serve Qwen/Qwen3-0.6B
+```
+
+The plugin (`src/pck/vllm_plugin.py`) is off unless `PCK_CHECK_SAMPLING=1`. It then checks
+every token vLLM samples and appends running totals to `PCK_CHECK_LOG`: tokens checked,
+rejected, false alarms, and the closest an accepted token came to the top-p boundary.
+`PCK_FAULT_RATE=0.01` injects wrong tokens to show they are caught. Use an absolute log
+path, since vLLM's engine runs in a subprocess. After a vLLM upgrade, check that
+`vllm.v1.worker.gpu.sample.sampler.Sampler._sample_random` still exists with the same
+arguments.
+
 ## Training (Phase 5)
 
 ```bash
