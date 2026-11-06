@@ -58,6 +58,16 @@ class RunConfig:
     out: str = "runs"
     dtype: Literal["bfloat16", "float32"] = "bfloat16"
     gradient_checkpointing: bool = False
+    generator: Literal["hf", "vllm"] = "hf"
+    """Rollout generation: Hugging Face generate() in the trainer, or a vLLM server
+    (`pck.rl.vllm_backend`) that hot-loads the adapter every step."""
+    vllm_url: str | None = None
+    """An already running vLLM server; None starts one with ``vllm_command``."""
+    vllm_command: str = "vllm"
+    vllm_port: int = 8000
+    vllm_gpu_memory: float = 0.35
+    """Share of GPU memory the vLLM server takes (the trainer needs the rest)."""
+    vllm_max_model_len: int = 4096
     warm_start_examples: int = 0
     """Scripted honest demonstrations to fine-tune on before GRPO (0: no warm start)."""
     warm_start_epochs: int = 1
@@ -70,6 +80,8 @@ class RunConfig:
             raise ValueError("turns must be at least 1")
         if self.slot_code and self.env != "cuda":
             raise ValueError("slot code needs env = 'cuda'")
+        if self.generator == "vllm" and self.lora_rank > 64:
+            raise ValueError("vLLM serves LoRA ranks up to 64 here (--max-lora-rank)")
         if self.env == "table" and self.turns != 1:
             raise ValueError("the table env is single-turn: set turns = 1 or env = 'emulator'")
         for key in self.tasks + self.eval_tasks:
