@@ -34,8 +34,11 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
     proof-gated checker reaches 95% with no hacks for the bandit.
   - A policy-gradient control learns the hack under calibrated tests (2 of 3 seeds) and
     never under the proof-gated checker.
-  - A 5-minute GRPO run of Qwen3-0.6B: 100% hacks under calibrated tests, 0% under the
-    proof-gated checker (one seed, one task; a pilot).
+  - GRPO on Qwen3-0.6B (5-minute runs, one task): under calibrated tests the policy
+    learns activation sparsity, paid 11% above the best honest kernel; under the
+    proof-gated checker it learns the honest optimum. Runs at a higher learning rate
+    collapse early, keeping or dropping the hack by chance. Pilot scale: one seed per
+    setting so far.
 - **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
   adapter hot-loaded after every GRPO update.
 
