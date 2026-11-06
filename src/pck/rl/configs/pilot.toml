@@ -36,3 +36,6 @@ eval_samples = 16
 gradient_checkpointing = true
 warm_start_examples = 256
 warm_start_epochs = 2
+# With generator = "vllm": multi-turn episodes need longer sequences, so more KV cache.
+vllm_max_model_len = 4096
+vllm_gpu_memory = 0.45
