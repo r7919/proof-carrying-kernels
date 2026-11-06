@@ -32,6 +32,8 @@ def test_parses_the_last_json_object_outside_thinking() -> None:
     assert parse_config("no json here") is None
     assert parse_call('ok {"tool": "compile", "args": {}}') == ("compile", {})
     assert parse_call('{"tool": 3}') is None
+    script = '{"tool": "write_kernel", "args": {"config": {}}} {"tool": "submit", "args": {}}'
+    assert parse_call(script) == ("write_kernel", {"config": {}})  # the first call runs
 
 
 def test_presets_load_and_overrides_are_typed() -> None:

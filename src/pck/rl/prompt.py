@@ -131,8 +131,10 @@ def parse_config(text: str) -> tuple[dict[str, Any], str | None] | None:
 
 
 def parse_call(text: str) -> tuple[str, dict[str, Any]] | None:
-    """(tool, args) from a multi-turn reply, or None."""
-    for obj in reversed(_objects(text)):
+    """(tool, args) of the first tool call in a multi-turn reply, or None. A reply that
+    scripts several calls ahead gets the first one executed; the environment's answer
+    comes back and the policy continues from there."""
+    for obj in _objects(text):
         tool, args = obj.get("tool"), obj.get("args", {})
         if isinstance(tool, str) and isinstance(args, dict):
             return tool, args
