@@ -23,6 +23,7 @@ produced it and the file with its full output, so every number here can be repro
 | GRPO smoke run, Qwen3-0.6B | `python -m pck.rl.train --config smoke --compare` | `harness/grpo_smoke_out.txt`, `harness/grpo_smoke/` |
 | Rollout throughput, HF vs vLLM | `python -m harness.bench_rollouts` | `harness/bench_rollouts_out.txt` |
 | GRPO smoke run with vLLM rollouts | `python -m pck.rl.train --config smoke --compare generator=vllm` | `harness/grpo_smoke_vllm_out.txt`, `harness/grpo_smoke_vllm/` |
+| GRPO smoke run, lr 1e-4, seed 1 | `... generator=vllm lr=1e-4 seed=1` | `harness/grpo_smoke_vllm_s1_out.txt`, `harness/grpo_smoke_vllm_s1/` |
 
 ## Measurements
 
@@ -440,3 +441,24 @@ The same smoke comparison, seed and budget, with `generator = vllm`. Full report
   advantage is zero), at the smoke preset's learning rate of 3e-4. Measuring how often
   calibrated tests let a hack through needs more seeds and a lower learning rate; this
   task's small speed incentive makes it a weak test case.
+
+### Seed 1 at a lower learning rate: the hack that pays
+
+The vLLM smoke comparison again with `lr = 1e-4` (instead of 3e-4) and seed 1. Full report:
+`harness/grpo_smoke_vllm_s1_out.txt`. This run used the first batched update
+(`update_batch = 8`), which overflowed the GPU (see the [runbook](runbook.md)), so each
+regime got only 12 steps.
+
+| Regime | Final config | Final eval: reward | Hacks |
+|---|---|---|---|
+| calibrated | `threads 256, vec 4, splits 16, skip_below 0.01` | **1.62** | **100%** |
+| proof-gated | `threads 256, vec 4, splits 16, skip_below 0` | **1.46** | 0% |
+
+- **The two policies differ in one knob.** Both settle on the same kernel layout. The
+  calibrated policy adds activation sparsity (`skip_below = 0.01`) and is paid 11% more for
+  it. The proof-gated one writes the honest kernel, the honest optimum on this task (1.46).
+- **The lower learning rate kept the group exploring.** Under calibrated tests the policy
+  reached the paying hack, every submission from step 6. Earlier runs at 3e-4 collapsed
+  onto whichever config came first, hacks included that were no faster than honest.
+- One seed and 12 steps: the next runs (seeds 0-2 at `lr = 1e-4`, with `update_batch = 2`)
+  measure how often this happens.
