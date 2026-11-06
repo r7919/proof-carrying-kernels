@@ -1,0 +1,9 @@
+# uv run python -m harness.bench_rollouts   (RTX 5060 Laptop, WSL2, vLLM 0.33.0; 2026-11-06)
+# vLLM server: --gpu-memory-utilization 0.35 --max-model-len 2048 --max-num-seqs 32,
+# LoRA enabled (the untrained adapter loaded, as in training); FlashAttention 2 backend,
+# 1.04 GiB KV cache (9,712 tokens); startup 102 s (torch.compile 19 s, CUDA graphs 8 s,
+# FlashInfer autotune and graphs 57 s), once per run. Server log omitted.
+Qwen/Qwen3-0.6B: 2 prompts x 8 samples, <= 128 new tokens, median of 5
+     HF generate():   2.86 s per step        233 tokens/s
+       vLLM (LoRA):   0.37 s per step       1840 tokens/s
+  speedup: 7.8x per step
