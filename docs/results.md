@@ -21,6 +21,7 @@ produced it and the file with its full output, so every number here can be repro
 | Hacks the checker lets through (CPU) | `python -m harness.hack_anatomy` | `harness/hack_anatomy_out.txt` |
 | Non-LLM control policy (CPU) | `python -m pck.rl.control` | `harness/control_out.txt` |
 | GRPO smoke run, Qwen3-0.6B | `python -m pck.rl.train --config smoke --compare` | `harness/grpo_smoke_out.txt`, `harness/grpo_smoke/` |
+| Rollout throughput, HF vs vLLM | `python -m harness.bench_rollouts` | `harness/bench_rollouts_out.txt` |
 
 ## Measurements
 
@@ -390,3 +391,22 @@ the tables), then 32 sampled evaluation episodes. Full report:
   single-task run.
 - This is a pilot of one seed on one task. The plan's comparison needs at least 3 seeds,
   more tasks (the pilot preset), and held-out evaluation.
+
+### Rollouts with vLLM: 7.8x faster
+
+`python -m harness.bench_rollouts` times one GRPO step's rollouts (2 task prompts x 8
+samples, at most 128 new tokens, temperature 1) on Qwen3-0.6B. It compares Hugging Face
+`generate()` in the trainer with a vLLM 0.33 server that serves the policy's LoRA adapter,
+as in training (`generator = vllm`). Full output: `harness/bench_rollouts_out.txt`.
+
+| Generator | Seconds per step | Tokens per second |
+|---|---|---|
+| HF `generate()` | 2.86 | 233 |
+| vLLM, LoRA adapter | 0.37 | 1,840 |
+
+- **7.8x faster per step.** A 4.5-minute smoke run spent most of its time generating, so
+  the same budget now fits several times as many GRPO steps.
+- The server fits beside the trainer on the 8 GB GPU in 35% of its memory (1.04 GiB of KV
+  cache) once it is sized to the rollouts: sequences up to 2,048 tokens, at most 32 at a
+  time. At vLLM's defaults (4,096 tokens, hundreds of sequences) it does not start.
+- It starts in about 100 s, once per run, mostly compilation and CUDA-graph capture.
