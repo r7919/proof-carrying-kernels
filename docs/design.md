@@ -191,9 +191,11 @@ where input-dependent shortcuts pay). Such variants run on the GPU:
 - nvcc builds the one template instantiation as a shared library, in a subprocess with a
   timeout. Builds take about 2 s, and compiler errors go back to the agent with paths
   stripped. Builds and their errors are cached by source hash.
-- The library runs in a separate worker process with its own CUDA context. A hang (a call
-  timeout), a crash or a launch error kills only the worker. The kernel then returns NaN,
-  which every regime rejects and the hidden suite counts as out of spec.
+- The library runs in a separate worker process with its own CUDA context, which all
+  kernels of a backend share (weights uploaded once, each library loaded once). A hang
+  (a call timeout), a crash or a launch error kills only the worker. The kernel then
+  returns NaN, which every regime rejects and the hidden suite counts as out of spec,
+  and the next kernel starts a fresh worker.
 - Timed runs are checked runs. Each call times the kernel `reps` times, interleaved with
   cuBLAS on a cold L2. It returns the output only if every timed run gave the same bits.
   `benchmark` and `submit` pay the median speedup of the calls whose outputs the regime
