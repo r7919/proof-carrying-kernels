@@ -27,6 +27,7 @@ TRUSTED = (
     "fp.py",
     "checker.py",
     "sampling.py",
+    "member.py",
     "cuda/checker.py",
     "cuda/sampling.py",
     "cuda/csrc/checker.h",
