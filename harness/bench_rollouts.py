@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument("--reps", type=int, default=5)
     parser.add_argument("--vllm-command", default="vllm")
     parser.add_argument("--vllm-gpu-memory", type=float, default=0.35)
+    parser.add_argument("--vllm-max-model-len", type=int, default=2048)
     args = parser.parse_args()
 
     cfg = RunConfig(model=args.model, max_new_tokens=args.max_new_tokens, temperature=1.0)
@@ -76,6 +77,7 @@ def main() -> None:
         generator="vllm",
         vllm_command=args.vllm_command,
         vllm_gpu_memory=args.vllm_gpu_memory,
+        vllm_max_model_len=args.vllm_max_model_len,
     )
     with tempfile.TemporaryDirectory() as live:
         policy.start_vllm(Path(live))
