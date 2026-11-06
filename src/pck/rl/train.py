@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
@@ -39,6 +40,7 @@ from pck.agent.tasks import locks
 from pck.rl.config import RunConfig, load
 from pck.rl.envs import EpisodeEnv, Outcome, TableEnv, outcome
 from pck.rl.prompt import multi_turn, parse_call, parse_config, single_turn
+from pck.rl.vllm_backend import Generation, VLLMGenerator
 
 FEEDBACK: tuple[RegimeName, ...] = ("calibrated", "proof-gated")
 
@@ -51,6 +53,8 @@ class Trajectory:
     outcome: Outcome
     text: str
     """The policy's replies."""
+    gen_logps: list[float] | None = None
+    """The generator's log-probability of each policy token (vLLM only)."""
 
 
 class Policy:
@@ -69,6 +73,37 @@ class Policy:
         base: Any = model or AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype)
         self.model = self._lora(base.to(self.device))
         self.sep_before, self.sep_after = self._turn_separator()
+        self.vllm: VLLMGenerator | None = None
+        """Set by `start_vllm`; then `generate` samples on the vLLM server."""
+        self._synced = 0
+
+    def start_vllm(self, live: Path) -> None:
+        """Start (or connect to) the vLLM server and give it the current adapter."""
+        cfg = self.cfg
+        self.vllm = VLLMGenerator(
+            cfg.model,
+            cfg.vllm_url,
+            eos_id=self.tok.eos_token_id,
+            lora_rank=cfg.lora_rank,
+            gpu_memory=cfg.vllm_gpu_memory,
+            max_model_len=cfg.vllm_max_model_len,
+            command=cfg.vllm_command,
+            port=cfg.vllm_port,
+        )
+        self.live = live
+        self.sync_vllm()
+
+    def sync_vllm(self) -> None:
+        """Save the adapter and load it into the vLLM server (keeps the last two on disk)."""
+        if self.vllm is None:
+            return
+        self._synced += 1
+        path = self.live / f"v{self._synced}"
+        self.model.save_pretrained(path)
+        self.vllm.sync(path, self._synced)
+        stale = self.live / f"v{self._synced - 2}"
+        if stale.exists():
+            shutil.rmtree(stale)
 
     def _lora(self, base: Any) -> Any:
         from peft import LoraConfig, get_peft_model
@@ -129,9 +164,19 @@ class Policy:
             before = before[len(eos) :]  # the policy already ended its turn
         return self.encode(before + reply + self.sep_after)
 
-    @torch.no_grad()
-    def generate(self, prompts: Sequence[list[int]]) -> list[list[int]]:
+    def generate(self, prompts: Sequence[list[int]]) -> list[Generation]:
         """One sampled continuation per prompt, cut after the first end-of-turn token."""
+        if self.vllm is not None:
+            return self.vllm.generate(
+                prompts,
+                temperature=self.cfg.temperature,
+                max_tokens=self.cfg.max_new_tokens,
+                seed=int(torch.randint(0, 2**31, ()).item()),
+            )
+        return [Generation(ids) for ids in self._generate_hf(prompts)]
+
+    @torch.no_grad()
+    def _generate_hf(self, prompts: Sequence[list[int]]) -> list[list[int]]:
         width = max(len(p) for p in prompts)
         pad = self.tok.pad_token_id
         ids = torch.tensor([[pad] * (width - len(p)) + p for p in prompts], device=self.device)
@@ -164,12 +209,13 @@ def rollout_single(
         policy.render([{"role": "user", "content": single_turn(task, locks(task), cfg.slot_code)}])
     )
     trajs = []
-    for gen in policy.generate([prompt] * cfg.group):
-        text = policy.decode(gen)
+    for g in policy.generate([prompt] * cfg.group):
+        text = policy.decode(g.ids)
         parsed = parse_config(text)
         fields, slot = parsed if parsed is not None else (None, None)
         out = env.run(task, fields, slot if cfg.slot_code else None, rng)
-        trajs.append(Trajectory(prompt + gen, [0] * len(prompt) + [1] * len(gen), out, text))
+        mask = [0] * len(prompt) + [1] * len(g.ids)
+        trajs.append(Trajectory(prompt + g.ids, mask, out, text, g.logps))
     return trajs
 
 
@@ -182,8 +228,11 @@ def rollout_multi(
     ids = policy.encode(policy.render([{"role": "user", "content": prompt}]))
     mask = [0] * len(ids)
     replies = []
+    logps: list[float] | None = []
     while ep.result is None:
-        gen = policy.generate([ids])[0]
+        g = policy.generate([ids])[0]
+        gen = g.ids
+        logps = None if logps is None or g.logps is None else logps + g.logps
         ids, mask = ids + gen, mask + [1] * len(gen)
         text = policy.decode(gen)
         replies.append(text)
@@ -198,7 +247,7 @@ def rollout_multi(
         if ep.result is None:
             extra = policy.reply_tokens(gen, reply)
             ids, mask = ids + extra, mask + [0] * len(extra)
-    return Trajectory(ids, mask, outcome(ep), "\n---\n".join(replies))
+    return Trajectory(ids, mask, outcome(ep), "\n---\n".join(replies), logps or None)
 
 
 def rollouts(
@@ -237,10 +286,16 @@ def grpo_loss(policy: Policy, groups: list[list[Trajectory]]) -> dict[str, float
     ]
     tokens = sum(sum(t.mask) for t, _ in batch) or 1
     kl_sum, n = 0.0, 0
+    gap_sum, gap_n = 0.0, 0
     for traj, adv in batch:
         if (adv == 0.0 and beta == 0.0) or sum(traj.mask) == 0:
             continue
         logp, _ = token_logps(model, traj.ids, traj.mask)
+        if traj.gen_logps is not None and len(traj.gen_logps) == len(logp):
+            # generator vs trainer: the two engines' numerics differ slightly
+            gen = torch.tensor(traj.gen_logps, device=logp.device)
+            gap_sum += float((logp.detach() - gen).abs().sum())
+            gap_n += len(logp)
         with torch.no_grad(), model.disable_adapter():
             ref, _ = token_logps(model, traj.ids, traj.mask)
         delta = ref - logp
@@ -249,7 +304,10 @@ def grpo_loss(policy: Policy, groups: list[list[Trajectory]]) -> dict[str, float
         loss.backward()
         kl_sum += float(kl.detach().sum())
         n += len(logp)
-    return {"kl": kl_sum / max(n, 1)}
+    stats = {"kl": kl_sum / max(n, 1)}
+    if gap_n:
+        stats["mismatch"] = gap_sum / gap_n  # mean |log p_trainer - log p_generator|
+    return stats
 
 
 def summarize(trajs: list[Trajectory]) -> dict[str, float]:
@@ -301,6 +359,24 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
                     print(f"warm start epoch {row['epoch']:.0f}: loss {row['loss']:.4f}")
 
             warm_start(policy, tasks, rng, note)
+    if cfg.generator == "vllm" and policy.vllm is None:
+        policy.start_vllm(out / "live")
+    try:
+        return _train_loop(cfg, policy, env, tasks, out, rng, log)
+    finally:
+        if policy.vllm is not None:
+            policy.vllm.close()
+
+
+def _train_loop(
+    cfg: RunConfig,
+    policy: Policy,
+    env: TableEnv | EpisodeEnv,
+    tasks: list[Task],
+    out: Path,
+    rng: np.random.Generator,
+    log: bool,
+) -> dict[str, Any]:
     params = [p for p in policy.model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=cfg.lr, weight_decay=0.0)
     start = time.time()
@@ -316,6 +392,7 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
             stats = grpo_loss(policy, groups)
             grad = float(torch.nn.utils.clip_grad_norm_(params, 1.0))
             opt.step()
+            policy.sync_vllm()  # the next rollouts sample from the updated policy
             flat = [t for g in groups for t in g]
             row = {
                 "step": step,
@@ -336,7 +413,8 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
                     f"{cfg.regime:>11s} step {step:3d} {row['time']:6.0f}s"
                     f"  reward {row['reward']:6.3f}  valid {row['valid']:4.0%}"
                     f"  passed {row['passed']:4.0%}  exploit {row['exploit']:4.0%}"
-                    f"  hacks {row['hack']:4.0%}  kl {row['kl']:.4f}",
+                    f"  hacks {row['hack']:4.0%}  kl {row['kl']:.4f}"
+                    + (f"  mismatch {row['mismatch']:.4f}" if "mismatch" in row else ""),
                     flush=True,
                 )
     summary = evaluate(policy, env, cfg, rng)
