@@ -145,8 +145,14 @@ uv run python -m harness.bench_rollouts               # HF vs vLLM throughput, o
   differ slightly. GRPO here assumes they are equal (importance ratio 1), so a mismatch
   that grows during a run means the samples are drifting off-policy.
 - **Memory.** The server takes `vllm_gpu_memory` of the GPU (default 0.35) and the trainer
-  the rest. On 8 GB this fits Qwen3-0.6B. For 1.7B, lower `max_new_tokens` or
-  `vllm_max_model_len`, or use a bigger GPU.
+  the rest. vLLM reserves KV cache for one sequence of `vllm_max_model_len` tokens (default
+  2048, enough for single-turn prompts plus replies) and refuses to start if that does
+  not fit ("KV cache is needed, which is larger than the available KV cache memory").
+  `vllm_max_num_seqs` (default 32) caps concurrent sequences, which also saves the CUDA
+  graphs vLLM would otherwise capture for hundreds of batch sizes. On the 8 GB 5060,
+  Qwen3-0.6B fits at the defaults. The multi-turn pilot uses 4096 tokens and 0.45 of the GPU; for 1.7B,
+  lower `max_new_tokens` or use a bigger GPU. Running `vllm download-kernels` once in
+  vLLM's environment saves FlashInfer's kernel compilation at every first start.
 
 Notes:
 
