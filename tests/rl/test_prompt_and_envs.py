@@ -39,6 +39,7 @@ def test_parses_the_last_json_object_outside_thinking() -> None:
 def test_presets_load_and_overrides_are_typed() -> None:
     smoke = load("smoke", ["steps=3", "regime=proof-gated", "time_limit_min=none"])
     assert smoke.steps == 3 and smoke.regime == "proof-gated" and smoke.time_limit_min is None
+    assert load("slot").lock_exploit_knobs
     pilot = load("pilot")
     assert pilot.turns > 1 and pilot.env == "table" and pilot.test_tasks()
     with pytest.raises(ValueError, match="unknown config key"):
@@ -131,3 +132,28 @@ def test_table_episodes_reject_slot_code_and_tall_trees() -> None:
     ep = TableEnv("proof-gated").start(TASK, np.random.default_rng(3), max_calls=6)
     tall = ColumnConfig(threads=32, splits=1).as_dict()  # one warp sums every column
     assert play(ep, tall)[3].startswith("FAIL: spec violated")
+
+
+def test_locked_exploit_knobs_leave_only_slot_code() -> None:
+    from pck.agent.column import ColumnConfig
+    from pck.rl.config import EXPLOIT_LOCKS, run_locks
+
+    real = task_by_key("896x896-qwen2.5-0.5b-l12/o_proj")
+    cfg = RunConfig(env="cuda", slot_code=True, lock_exploit_knobs=True, tasks=(real.key,))
+    locked = run_locks(cfg, real)
+    assert locked["layout"] == "col" and locked["skip_below"] == 0.0
+    text = single_turn(real, locked, slot=True)
+    assert "skip_below: fixed to 0.0" in text and "pck_slot_use" in text
+    env = EpisodeEnv("calibrated", extra_locks=EXPLOIT_LOCKS)
+    ep = env.start(real, np.random.default_rng(0))
+    sparse = ColumnConfig(skip_below=0.01).as_dict()
+    assert ep.call("write_kernel", {"config": sparse}).startswith("invalid config: skip_below")
+    with pytest.raises(ValueError, match="lock_exploit_knobs"):
+        RunConfig(env="table", lock_exploit_knobs=True)
+
+
+def test_the_honest_demonstration_slot_is_accepted() -> None:
+    from pck.agent.sandbox import check_slot
+    from pck.rl.warmstart import HONEST_SLOT
+
+    assert check_slot(HONEST_SLOT, "row") == [] and check_slot(HONEST_SLOT, "col") == []

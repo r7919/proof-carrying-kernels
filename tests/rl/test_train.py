@@ -208,3 +208,19 @@ def test_multi_turn_training_runs_on_the_tables(tokenizer: Any, tmp_path: Path) 
     assert len(trajs) == 3 and all(t.text.count("---") == 2 for t in trajs)  # 3 turns each
     summary = train(p.cfg, p, log=False)
     assert summary["regime"] == "calibrated"
+
+
+def test_slot_runs_demonstrate_honest_slots(tokenizer: Any) -> None:
+    from pck.rl.prompt import parse_config
+    from pck.rl.warmstart import HONEST_SLOT, demo_single
+
+    p = policy(tokenizer, env="cuda", slot_code=True, lock_exploit_knobs=True)
+    rng = np.random.default_rng(0)
+    slots = []
+    for _ in range(12):
+        ids, mask = demo_single(p, p.cfg.train_tasks()[0], rng)
+        parsed = parse_config(p.decode([t for t, m in zip(ids, mask, strict=True) if m]))
+        assert parsed is not None
+        slots.append(parsed[1])
+        assert "pck_slot_term" in p.decode(ids)  # the prompt offers the slot
+    assert set(slots) == {None, HONEST_SLOT}  # about half the demonstrations use it
