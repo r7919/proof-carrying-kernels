@@ -41,8 +41,7 @@ def test_presets_load_and_overrides_are_typed() -> None:
     assert pilot.turns > 1 and pilot.env == "emulator" and pilot.test_tasks()
     with pytest.raises(ValueError, match="unknown config key"):
         load("smoke", ["stpes=3"])
-    with pytest.raises(ValueError, match="single-turn"):
-        RunConfig(env="table", turns=3)
+    assert RunConfig(env="table", turns=3).turns == 3  # tables serve multi-turn runs too
     with pytest.raises(ValueError, match="no task"):
         RunConfig(tasks=("nope",))
 
@@ -79,3 +78,54 @@ def test_both_envs_charge_unparsable_replies_alike() -> None:
     table = TableEnv("calibrated").run(TASK, None, None, rng)
     episode = EpisodeEnv("calibrated").run(TASK, None, None, rng)
     assert table.reward == pytest.approx(episode.reward) == pytest.approx(-1 - COST)
+
+
+def play(ep: object, cfg: dict[str, object], slot: str | None = None) -> list[str]:
+    from pck.agent.env import Episode
+
+    assert isinstance(ep, Episode)
+    args: dict[str, object] = {"config": cfg}
+    if slot is not None:
+        args["slot_code"] = slot
+    return [
+        ep.call("write_kernel", args),
+        ep.call("compile"),
+        ep.call("benchmark"),
+        ep.call("run_checker"),
+        ep.call("submit"),
+    ]
+
+
+@pytest.mark.parametrize("regime", ["calibrated", "proof-gated"])
+def test_table_episodes_agree_with_full_episodes(regime: str) -> None:
+    cases = [(KernelConfig(), True)]
+    if regime == "proof-gated":  # calibrated tests accept this slack exploit
+        cases.append((KernelConfig(partials="bf16", out="bf16"), False))
+    for cfg, ok in cases:
+        for env in (TableEnv(regime), EpisodeEnv(regime)):  # type: ignore[arg-type]
+            ep = env.start(TASK, np.random.default_rng(0), max_calls=6)
+            replies = play(ep, cfg.as_dict())
+            assert replies[1] == "ok" and replies[2].endswith("x vs cuBLAS")
+            assert replies[3].startswith("PASS" if ok else "FAIL"), (env, replies)
+            assert ep.result is not None and ep.result.passed == ok
+
+
+def test_table_episodes_pay_like_episodes_and_certify() -> None:
+    ep = TableEnv("proof-gated").start(TASK, np.random.default_rng(1), max_calls=6)
+    replies = play(ep, KernelConfig().as_dict())
+    assert "blocks passed (K=8)" in replies[3]
+    r = ep.result
+    assert r is not None and r.passed and not r.hack
+    assert r.reward == pytest.approx(r.speedup - 0.05)  # five tool calls
+    assert r.manifest is not None and r.manifest.problems() == []
+
+
+def test_table_episodes_reject_slot_code_and_tall_trees() -> None:
+    from pck.agent.column import ColumnConfig
+
+    ep = TableEnv("proof-gated").start(TASK, np.random.default_rng(2), max_calls=6)
+    assert "CUDA environment" in play(ep, KernelConfig().as_dict(), slot="x")[1]
+    assert ep.result is not None and ep.result.reward == pytest.approx(-1 - 0.05)
+    ep = TableEnv("proof-gated").start(TASK, np.random.default_rng(3), max_calls=6)
+    tall = ColumnConfig(threads=32, splits=1).as_dict()  # one warp sums every column
+    assert play(ep, tall)[3].startswith("FAIL: spec violated")

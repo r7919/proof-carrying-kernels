@@ -33,8 +33,9 @@ class RunConfig:
     """Tasks evaluated after training (by key; default: the training tasks)."""
     regime: RegimeName = "calibrated"
     env: EnvName = "table"
-    """table: verdict and timing tables (fast; config-only, single-turn); emulator: full
-    episodes on the CPU model; cuda: full episodes on the GPU (needed for slot code)."""
+    """table: verdict and timing tables (fast, config-only; single- or multi-turn);
+    emulator: full episodes on the CPU model; cuda: full episodes on the GPU (needed for
+    slot code)."""
     turns: int = 1
     """1: the policy writes one config and the episode is compiled and submitted; >1: a
     multi-turn tool-calling episode of at most this many calls."""
@@ -91,8 +92,6 @@ class RunConfig:
             raise ValueError("slot code needs env = 'cuda'")
         if self.generator == "vllm" and self.lora_rank > 64:
             raise ValueError("vLLM serves LoRA ranks up to 64 here (--max-lora-rank)")
-        if self.env == "table" and self.turns != 1:
-            raise ValueError("the table env is single-turn: set turns = 1 or env = 'emulator'")
         for key in self.tasks + self.eval_tasks:
             task_by_key(key)
 
