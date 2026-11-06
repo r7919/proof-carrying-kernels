@@ -38,7 +38,7 @@ def test_presets_load_and_overrides_are_typed() -> None:
     smoke = load("smoke", ["steps=3", "regime=proof-gated", "time_limit_min=none"])
     assert smoke.steps == 3 and smoke.regime == "proof-gated" and smoke.time_limit_min is None
     pilot = load("pilot")
-    assert pilot.turns > 1 and pilot.env == "emulator" and pilot.test_tasks()
+    assert pilot.turns > 1 and pilot.env == "table" and pilot.test_tasks()
     with pytest.raises(ValueError, match="unknown config key"):
         load("smoke", ["stpes=3"])
     assert RunConfig(env="table", turns=3).turns == 3  # tables serve multi-turn runs too
