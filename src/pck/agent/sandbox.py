@@ -13,9 +13,11 @@ Isolation:
     assembly, kernels, extern or host code) or that is too long.
   - ``compile_variant`` builds one template instantiation as a shared library with nvcc in
     a subprocess with a timeout; results, errors included, are cached by source hash.
-  - ``LiveKernel`` runs the library in a separate worker process that holds its own CUDA
-    context. A hang (timeout), a crash or a launch error kills only the worker; the kernel
-    then returns NaN, which every regime rejects.
+  - ``LiveKernel`` runs the library in a worker process with its own CUDA context, shared
+    by all kernels of one `CudaBackend` (each task's weights are uploaded once; each
+    library is loaded once). A hang (timeout), a crash or a launch error kills the worker;
+    that kernel then returns NaN, which every regime rejects, and the next kernel starts
+    a fresh worker.
 
 Timed runs are checked runs: every call runs the kernel ``reps`` times interleaved with
 cuBLAS (``torch.mv``) on a cold L2, and returns the output only if all timed runs gave the
@@ -37,7 +39,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Any
@@ -207,27 +208,17 @@ def compile_variant(
     return lib, "ok"
 
 
-def _worker(conn: Connection, lib: str, cfg_fields: dict[str, Any], w_bits: Any) -> None:
-    """Worker process: owns the CUDA context, W on the GPU and the variant's library."""
+def _worker(conn: Connection) -> None:
+    """The shared worker process: owns the CUDA context, the tasks' weights on the GPU and
+    every variant library it has been asked to run. Exits after any kernel failure (a
+    crashed kernel can poison the context); the parent then starts a fresh worker."""
     import ctypes
     import statistics
 
-    cfg = make_config(cfg_fields)
     try:
         import torch
 
-        fn = ctypes.CDLL(lib).pck_launch
-        fn.restype = ctypes.c_int
-        fn.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_longlong] * 2 + [ctypes.c_void_p]
         dev = torch.device("cuda")
-        bits = torch.from_numpy(np.ascontiguousarray(w_bits).view(np.int16))
-        W = bits.to(dev).view(torch.bfloat16)
-        m, n = W.shape
-        A = W.t().contiguous() if isinstance(cfg, ColumnConfig) else W
-        y = torch.empty(m, dtype=torch.float32, device=dev)
-        splits = cfg.splits if isinstance(cfg, ColumnConfig) else 1
-        scratch = torch.empty(max(splits, 1) * m, dtype=torch.float32, device=dev)
-        tickets = torch.zeros(-(-m // 32) + 1024, dtype=torch.int32, device=dev)
         l2 = int(getattr(torch.cuda.get_device_properties(0), "L2_cache_size", 64 << 20))
         flush = torch.empty(2 * max(l2, 1 << 20), dtype=torch.uint8, device=dev)
         torch.cuda.synchronize()
@@ -235,12 +226,38 @@ def _worker(conn: Connection, lib: str, cfg_fields: dict[str, Any], w_bits: Any)
         conn.send(("error", f"worker failed to start: {e}"))
         return
     conn.send(("ready", None))
+    weights: dict[int, tuple[Any, Any]] = {}  # key -> (W, W^T)
+    libs: dict[str, Any] = {}
     while True:
         msg = conn.recv()
         if msg is None:
             return
-        x_bits, reps = msg
+        if msg[0] == "weights":
+            _, key, w_bits = msg
+            bits = torch.from_numpy(np.ascontiguousarray(w_bits).view(np.int16))
+            W = bits.to(dev).view(torch.bfloat16)
+            weights[key] = (W, None)
+            conn.send(("ok", None))
+            continue
+        _, key, lib, cfg_fields, x_bits, reps = msg
         try:
+            cfg = make_config(cfg_fields)
+            if lib not in libs:
+                fn = ctypes.CDLL(lib).pck_launch
+                fn.restype = ctypes.c_int
+                fn.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_longlong] * 2 + [ctypes.c_void_p]
+                libs[lib] = fn
+            fn = libs[lib]
+            W, WT = weights[key]
+            m, n = W.shape
+            if isinstance(cfg, ColumnConfig) and WT is None:
+                WT = W.t().contiguous()
+                weights[key] = (W, WT)
+            A = WT if isinstance(cfg, ColumnConfig) else W
+            y = torch.empty(m, dtype=torch.float32, device=dev)
+            splits = cfg.splits if isinstance(cfg, ColumnConfig) else 1
+            scratch = torch.empty(max(splits, 1) * m, dtype=torch.float32, device=dev)
+            tickets = torch.zeros(-(-m // 32) + 1024, dtype=torch.int32, device=dev)
             xb = torch.from_numpy(np.ascontiguousarray(x_bits).view(np.int16))
             x = xb.to(dev).view(torch.bfloat16)
             outs: list[Any] = []
@@ -283,20 +300,91 @@ def _worker(conn: Connection, lib: str, cfg_fields: dict[str, Any], w_bits: Any)
             return
 
 
-@dataclass
-class _Session:
-    process: Any
-    conn: Connection
-    shape: tuple[int, int]
-    key: int
+def _weights_key(W: NDArray[np.float32]) -> int:
+    """A cheap identity for a weight matrix (its shape and a sample of its rows)."""
+    return hash((W.shape, to_bits(W[:: max(1, W.shape[0] // 64)]).tobytes()))
+
+
+class SharedWorker:
+    """One worker process for many kernels: started on first use, restarted after a kernel
+    hangs, crashes or fails to launch (which kills it)."""
+
+    def __init__(self) -> None:
+        self.process: Any = None
+        self.conn: Connection | None = None
+        self.loaded: set[int] = set()
+
+    def _start(self) -> Connection:
+        if self.conn is not None and self.process is not None and self.process.is_alive():
+            return self.conn
+        self.stop()
+        ctx = mp.get_context("spawn")
+        parent, child = ctx.Pipe()
+        self.process = ctx.Process(target=_worker, args=(child,), daemon=True)
+        self.process.start()
+        child.close()
+        self.conn = parent
+        status, payload = self._recv(START_TIMEOUT)
+        if status != "ready":
+            self.stop()
+            raise OSError(str(payload))
+        return parent
+
+    def _recv(self, timeout: float) -> tuple[str, Any]:
+        assert self.conn is not None
+        if not self.conn.poll(timeout):
+            return "error", f"timed out after {timeout:.0f} s"
+        status, payload = self.conn.recv()
+        return status, payload
+
+    def run(
+        self, lib: Path, cfg: Config, W: NDArray[np.float32], x: NDArray[np.float32], reps: int
+    ) -> tuple[str, Any]:
+        """One timed call: ("ok", (y, same, ratio)) or ("error", reason)."""
+        try:
+            conn = self._start()
+            key = _weights_key(W)
+            if key not in self.loaded:
+                conn.send(("weights", key, to_bits(W)))
+                status, payload = self._recv(START_TIMEOUT)
+                if status != "ok":
+                    raise OSError(str(payload))
+                self.loaded.add(key)
+            fields = json.loads(json.dumps(cfg.as_dict()))
+            conn.send(("run", key, str(lib), fields, to_bits(np.asarray(x, np.float32)), reps))
+            status, payload = self._recv(CALL_TIMEOUT)
+        except (OSError, EOFError) as e:
+            status, payload = "error", f"worker died: {e}"
+        if status != "ok":
+            self.stop()  # killed, so the next kernel gets a fresh context
+        return status, payload
+
+    def stop(self) -> None:
+        if self.process is not None:
+            if self.process.is_alive() and self.conn is not None:
+                with contextlib.suppress(OSError, BrokenPipeError):
+                    self.conn.send(None)
+                self.process.join(2)
+            if self.process.is_alive():
+                self.process.kill()
+                self.process.join(5)
+        self.process, self.conn = None, None
+        self.loaded = set()
+
+    def __del__(self) -> None:
+        with contextlib.suppress(Exception):
+            self.stop()
 
 
 class LiveKernel:
-    """A compiled variant, run on the GPU in a worker process (a `regimes.Kernel`)."""
+    """A compiled variant, run on the GPU by a worker process (a `regimes.Kernel`)."""
 
-    def __init__(self, lib: Path, cfg: Config, reps: int = REPS) -> None:
+    def __init__(
+        self, lib: Path, cfg: Config, reps: int = REPS, worker: SharedWorker | None = None
+    ) -> None:
         self.lib, self.cfg, self.reps = lib, cfg, reps
-        self.session: _Session | None = None
+        self.worker = worker or SharedWorker()
+        self._own_worker = worker is None
         self.failure: str | None = None
         self.ratios: list[float] = []
 
@@ -304,18 +392,14 @@ class LiveKernel:
         nan = np.full(W.shape[0], np.nan, np.float32)
         if self.failure is not None:
             return nan
-        try:
-            session = self._session(W)
-            session.conn.send((to_bits(np.asarray(x, np.float32)), self.reps))
-            status, payload = self._recv(session, CALL_TIMEOUT)
-        except (OSError, EOFError) as e:
-            status, payload = "error", f"worker died: {e}"
+        status, payload = self.worker.run(self.lib, self.cfg, W, x, self.reps)
         if status != "ok":
-            self._fail(str(payload))
+            self.failure = str(payload)
             return nan
         y, same, ratio = payload
         if not same:
-            self._fail("timed runs gave different outputs")
+            self.failure = "timed runs gave different outputs"
+            self.worker.stop()  # its library may keep state: start clean
             return nan
         self.ratios.append(float(ratio))
         return np.asarray(y, np.float32)
@@ -328,61 +412,24 @@ class LiveKernel:
         return float(np.median(self.ratios)) if self.ratios else 0.0
 
     def close(self) -> None:
-        if self.session is not None:
-            with contextlib.suppress(OSError):
-                self.session.conn.send(None)
-            self.session.process.join(5)
-            if self.session.process.is_alive():
-                self.session.process.kill()
-            self.session = None
-
-    def _session(self, W: NDArray[np.float32]) -> _Session:
-        key = hash(to_bits(W[:: max(1, W.shape[0] // 64)]).tobytes())  # cheap identity
-        s = self.session
-        if s is not None and s.shape == W.shape and s.key == key:
-            return s
-        self.close()
-        ctx = mp.get_context("spawn")
-        parent, child = ctx.Pipe()
-        fields = json.loads(json.dumps(self.cfg.as_dict()))
-        process = ctx.Process(
-            target=_worker, args=(child, str(self.lib), fields, to_bits(W)), daemon=True
-        )
-        process.start()
-        child.close()
-        s = _Session(process, parent, (W.shape[0], W.shape[1]), key)
-        self.session = s
-        status, payload = self._recv(s, START_TIMEOUT)
-        if status != "ready":
-            raise OSError(str(payload))
-        return s
-
-    def _recv(self, s: _Session, timeout: float) -> tuple[str, Any]:
-        if not s.conn.poll(timeout):
-            return "error", f"timed out after {timeout:.0f} s"
-        status, payload = s.conn.recv()
-        return status, payload
-
-    def _fail(self, reason: str) -> None:
-        self.failure = reason
-        if self.session is not None:
-            self.session.process.kill()
-            self.session.process.join(5)
-            self.session = None
-
-    def __del__(self) -> None:
-        with contextlib.suppress(Exception):
-            self.close()
+        """Stop the worker if this kernel owns it (a backend's kernels share one)."""
+        if self._own_worker:
+            self.worker.stop()
 
 
 class CudaBackend:
-    """Builds every variant, slot code or not, as a `LiveKernel` (an `env.Backend`)."""
+    """Builds every variant, slot code or not, as a `LiveKernel` (an `env.Backend`). All
+    of a backend's kernels share one worker process and CUDA context."""
 
     def __init__(self, reps: int = REPS) -> None:
         self.reps = reps
+        self.worker = SharedWorker()
 
     def build(self, cfg: Config, slot_code: str | None) -> tuple[LiveKernel | None, str]:
         lib, message = compile_variant(cfg, slot_code)
         if lib is None:
             return None, message
-        return LiveKernel(lib, cfg, self.reps), message
+        return LiveKernel(lib, cfg, self.reps, self.worker), message
+
+    def close(self) -> None:
+        self.worker.stop()

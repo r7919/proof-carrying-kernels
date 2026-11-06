@@ -5,6 +5,7 @@ caught. Run: uv run pytest tests/gpu/test_sandbox_cuda.py (set CUDA_HOME)."""
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 
 import numpy as np
 import pytest
@@ -26,8 +27,17 @@ pytestmark = [
 TERM = "__device__ float pck_slot_term(float w, float x, int64_t j) { return __fmul_rn(w, x); }"
 
 
+BACKEND = CudaBackend(reps=3)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _stop_worker() -> Iterator[None]:
+    yield
+    BACKEND.close()
+
+
 def build(cfg: Config, slot: str | None = None) -> LiveKernel:
-    kernel, message = CudaBackend(reps=3).build(cfg, slot)
+    kernel, message = BACKEND.build(cfg, slot)
     assert kernel is not None, message
     return kernel
 
@@ -119,3 +129,21 @@ def test_a_live_episode_runs_end_to_end_in_time() -> None:
     assert ep.result is not None and ep.result.passed and not ep.result.hack
     assert ep.result.speedup > 0.5
     assert time.time() - start < 120
+
+
+def test_kernels_share_a_worker_that_restarts_after_a_crash() -> None:
+    crash = (
+        "__device__ float pck_slot_term(float w, float x, int64_t j) {"
+        " *(volatile float*)(16 + j * 4096) = 1.0f; return w * x; }"
+    )
+    W, x = data(256, 512, seed=3)
+    a, b = build(KernelConfig()), build(KernelConfig(threads=128, vec=4))
+    np.testing.assert_array_equal(a(W, x), emulate(KernelConfig(), W, x))
+    pid = BACKEND.worker.process.pid
+    b(W, x)
+    assert BACKEND.worker.process.pid == pid  # one worker, one CUDA context
+    assert np.isnan(build(KernelConfig(), crash)(W, x)).all()
+    assert BACKEND.worker.process is None  # killed with the crashed kernel
+    np.testing.assert_array_equal(a(W, x), emulate(KernelConfig(), W, x))  # fresh worker
+    fresh = getattr(BACKEND.worker, "process")  # noqa: B009 (mypy narrowed it to None)
+    assert fresh is not None and fresh.pid != pid
