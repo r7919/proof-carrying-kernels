@@ -1,6 +1,13 @@
-# The plan's pilot (hours; overnight on the 5060 or a rented GPU): Qwen3-1.7B, multi-turn
-# tool calling on full CPU-model episodes, all training tasks; evaluated on held-out layer
-# 20. Run each regime and >= 3 seeds:  python -m pck.rl.train --config pilot --compare seed=1
+# The plan's pilot: Qwen3-1.7B, multi-turn tool calling (up to 6 calls per episode), eight
+# training tasks, evaluated on held-out tasks (layer 20, outliers, an unseen error budget).
+# Sized for the 8 GB RTX 5060, overnight per regime and seed:
+#   uv run python -m pck.rl.train --config pilot --compare seed=0
+# - env = "table": tool answers from the verdict and timing tables (`TableEpisode`); the
+#   faithful but much slower alternative is env = "emulator" (CPU-model episodes).
+# - generator = "hf": 1.7B weights do not fit twice in 8 GB (trainer plus a vLLM server).
+#   On a bigger GPU add generator=vllm; for a quick trial on the laptop use
+#   model=Qwen/Qwen3-0.6B generator=vllm steps=40.
+# - Each episode's group runs in lockstep (one batched generation per turn).
 name = "pilot"
 model = "Qwen/Qwen3-1.7B"
 lora_rank = 32
@@ -23,7 +30,7 @@ eval_tasks = [
     "1024x1000-outliers-h128",
 ]
 regime = "calibrated"
-env = "emulator"
+env = "table"
 turns = 6
 steps = 400
 group = 4
@@ -34,6 +41,7 @@ max_new_tokens = 256
 time_limit_min = "none"
 eval_samples = 16
 gradient_checkpointing = true
+update_batch = 1  # multi-turn contexts are long (up to ~3k tokens)
 warm_start_examples = 256
 warm_start_epochs = 2
 # With generator = "vllm": multi-turn episodes need longer sequences, so more KV cache.
