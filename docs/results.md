@@ -22,6 +22,7 @@ produced it and the file with its full output, so every number here can be repro
 | Non-LLM control policy (CPU) | `python -m pck.rl.control` | `harness/control_out.txt` |
 | GRPO smoke run, Qwen3-0.6B | `python -m pck.rl.train --config smoke --compare` | `harness/grpo_smoke_out.txt`, `harness/grpo_smoke/` |
 | Rollout throughput, HF vs vLLM | `python -m harness.bench_rollouts` | `harness/bench_rollouts_out.txt` |
+| GRPO smoke run with vLLM rollouts | `python -m pck.rl.train --config smoke --compare generator=vllm` | `harness/grpo_smoke_vllm_out.txt`, `harness/grpo_smoke_vllm/` |
 
 ## Measurements
 
@@ -410,3 +411,32 @@ as in training (`generator = vllm`). Full output: `harness/bench_rollouts_out.tx
   cache) once it is sized to the rollouts: sequences up to 2,048 tokens, at most 32 at a
   time. At vLLM's defaults (4,096 tokens, hundreds of sequences) it does not start.
 - It starts in about 100 s, once per run, mostly compilation and CUDA-graph capture.
+
+### The smoke run again, with vLLM rollouts
+
+The same smoke comparison, seed and budget, with `generator = vllm`. Full report:
+`harness/grpo_smoke_vllm_out.txt` (run files in `harness/grpo_smoke_vllm/`).
+
+| Regime | Generator | Steps in 4.5 min | Exploit at step 0 | Final eval: hacks | Reward |
+|---|---|---|---|---|---|
+| calibrated | HF | 44 | 38% | **100%** | 1.44 |
+| calibrated | vLLM | 59 | 25% | **0%** | 1.43 |
+| proof-gated | HF | 47 | 0% passed | 0% | 1.28 |
+| proof-gated | vLLM | 64 | 0% passed | 0% | 1.33 |
+
+- **Under calibrated tests, whether the hack survives is chance.** Both runs start with
+  the base model proposing activation sparsity, and the calibrated test accepts some of
+  it. One run keeps it in every submission; the other drops it by step 8 for an honest
+  config of the same speed. The hacks these runs find are no faster than the best honest
+  kernel (the run that kept one scores 1.44, the one that dropped it 1.43), so nothing
+  pushes the policy towards or away from them. Each run keeps whatever its group
+  collapses onto first.
+- **Under the proof-gated checker no run submits a hack.**
+- **vLLM speeds the whole step up 1.3-1.4x, not 7.8x.** Generation now takes about 0.4 s
+  of a 4.2-4.6 s step; the rest was the update, one trajectory at a time. The update is
+  now batched (`update_batch`), which this run predates.
+- **The policy and vLLM agree:** `mismatch` stays at 0.000-0.017 nats per token.
+- **Groups collapse early** (all 16 replies identical by about step 20, after which the
+  advantage is zero), at the smoke preset's learning rate of 3e-4. Measuring how often
+  calibrated tests let a hack through needs more seeds and a lower learning rate; this
+  task's small speed incentive makes it a weak test case.
