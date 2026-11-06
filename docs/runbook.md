@@ -120,6 +120,7 @@ Knobs for a bigger run:
 | `lora_rank`, `lr`, `kl` | 16, 3e-4, 0.01 | 32, 1e-4, 0.02 | |
 | `gradient_checkpointing` | false | true | for longer multi-turn contexts |
 | `generator` | hf | vllm | vLLM rollouts; see below |
+| `update_batch` | 8 | 4-8 | trajectories per forward pass in the update; lower it on out-of-memory |
 | `seed` | 0 | 0, 1, 2 | the plan asks for at least 3 seeds per regime |
 
 ### Faster rollouts with vLLM
@@ -161,8 +162,9 @@ Notes:
   so keep the GPU free of other work. Generation pauses while the environment runs, so
   the policy does not share the GPU with timing.
 - **Throughput.** With the default `generator=hf`, generation is plain Hugging Face
-  `generate()`; use `generator=vllm` for longer runs. The update processes one trajectory
-  per forward pass.
+  `generate()`; use `generator=vllm` for longer runs. With vLLM, the update becomes the
+  larger part of a step. It runs `update_batch` trajectories per padded forward pass, and
+  computes logits only from the first policy token on.
 - **Validity.** If `valid` stays near 0, the model is not producing parsable configs. Look
   at `samples.jsonl`, raise `max_new_tokens`, or enable the warm start.
 

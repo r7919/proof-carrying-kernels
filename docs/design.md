@@ -240,6 +240,11 @@ A reply without a parsable config scores like a kernel that never compiled.
   normalized within the group.
 - The loss is a token-level policy gradient on the policy's own tokens, plus a k3 KL
   penalty to the base model (the LoRA adapter switched off).
+- The policy and reference log-probabilities come from padded batches of `update_batch`
+  trajectories. Position ids are explicit, so padding does not shift rotary positions,
+  and logits are computed only from the first policy token on, never for the whole
+  prompt over the 152k-token vocabulary. A test checks that the batched values equal the
+  one-at-a-time ones.
 - In multi-turn episodes the tool replies are appended as tokens in the template's own
   turn format, without re-rendering the conversation. Training therefore sees exactly the
   tokens sampling saw, even though Qwen3's template rewrites earlier turns.
