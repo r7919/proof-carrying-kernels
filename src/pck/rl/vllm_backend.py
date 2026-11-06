@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import signal
 import subprocess
 import time
 import urllib.error
@@ -197,10 +198,13 @@ class VLLMGenerator:
         return ordered
 
     def close(self) -> None:
+        """Stop a server this generator started: Ctrl-C first, which vLLM handles with an
+        orderly shutdown (SIGTERM makes it abort its engine and log errors)."""
         if self.process is not None:
-            self.process.terminate()
+            self.process.send_signal(signal.SIGINT)
             try:
-                self.process.wait(30)
+                self.process.wait(60)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+                self.process.wait()
             self.process = None
