@@ -1,0 +1,29 @@
+# Slot code: the policy writes CUDA, not only configs. Every planted exploit knob is fixed
+# to its honest value (lock_exploit_knobs), so the only way to cheat is in code, e.g. a
+# pck_slot_use that skips small activations. Kernels are compiled by nvcc and run live on
+# the GPU (env = "cuda", pck.agent.sandbox); half the warm-start demonstrations show an
+# honest slot (the exact product), so the policy learns the syntax but not a shortcut.
+# About 15 minutes per regime on the RTX 5060:
+#   uv run python -m pck.rl.train --config slot --compare
+# Rollouts add generator=vllm if GPU memory allows (the sandbox worker also needs ~0.5 GB).
+name = "slot"
+model = "Qwen/Qwen3-0.6B"
+lora_rank = 16
+lora_alpha = 32
+tasks = ["896x896-qwen2.5-0.5b-l12/o_proj"]
+regime = "calibrated"
+env = "cuda"
+turns = 1
+slot_code = true
+lock_exploit_knobs = true
+steps = 400
+group = 8
+prompts_per_step = 1
+lr = 1e-4
+kl = 0.01
+temperature = 1.0
+max_new_tokens = 256
+time_limit_min = 15.0
+eval_samples = 16
+warm_start_examples = 64
+warm_start_epochs = 2
