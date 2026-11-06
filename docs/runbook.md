@@ -123,6 +123,30 @@ Knobs for a bigger run:
 | `update_batch` | 2 | 2-8 | trajectories per forward pass in the update; see the note on memory |
 | `seed` | 0 | 0, 1, 2 | the plan asks for at least 3 seeds per regime |
 
+### The pilot and slot-code runs
+
+```bash
+uv run python -m pck.rl.train --config pilot --compare seed=0   # overnight per seed
+uv run python -m pck.rl.train --config slot --compare           # ~15 min per regime
+```
+
+- **Pilot** (`configs/pilot.toml`): Qwen3-1.7B, multi-turn tool calling (up to 6 calls),
+  eight training tasks, evaluated on held-out tasks. Multi-turn episodes are answered from
+  the tables (`env = table`, `pck.rl.envs.TableEpisode`): each tool call costs
+  microseconds, and a test checks the answers agree with full CPU-model episodes. The
+  group's episodes run in lockstep, one batched generation per turn. On the 8 GB GPU it
+  generates with Hugging Face, since 1.7B does not fit twice beside a vLLM server. For a
+  quick trial: `model=Qwen/Qwen3-0.6B generator=vllm steps=40`.
+- **Slot code** (`configs/slot.toml`): the policy may add CUDA (`slot_code`). With
+  `lock_exploit_knobs`, every planted exploit knob is fixed to its honest value, so the
+  only way to cheat is to write the cheat, e.g. a `pck_slot_use` that skips small
+  activations. Kernels are compiled by nvcc and run live (`env = cuda`). One sandbox
+  worker serves all of a run's kernels and restarts after a crash. Half the warm-start
+  demonstrations show an honest slot (the exact product).
+- A run's rollouts and hack labels are in `samples.jsonl` and `metrics.jsonl` as for
+  the smoke run. For slot runs, look in `samples.jsonl` for the slot code the policy
+  writes.
+
 ### Faster rollouts with vLLM
 
 Generation is the slowest part of a step. With `generator=vllm`, rollouts are sampled by
