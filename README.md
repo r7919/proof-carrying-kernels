@@ -99,7 +99,8 @@ uv run python -m pck.rl.control                            # the non-LLM control
 ```
 
 Training is GRPO with LoRA on a small chat model (Qwen3-0.6B in the smoke preset,
-Qwen3-1.7B in the pilot). Every knob is in a TOML preset or a `key=value` override; see the
+Qwen3-1.7B in the pilot), with rollouts from Hugging Face or, with `generator=vllm`, a
+vLLM server that hot-loads the adapter every step. Every knob is in a TOML preset or a `key=value` override; see the
 [runbook](docs/runbook.md#training-phase-5).
 
 ## Getting started
@@ -135,7 +136,8 @@ src/pck/            CPU library: FP helpers, bit-exact GEMV models, checker, sam
 src/pck/cuda/       CUDA kernels and trusted checkers (csrc/), bindings, PTX audit
 src/pck/agent/      agent environment: templates and their CPU models, tasks, regimes, spec,
                     episodes, search baselines, slot-code sandbox
-src/pck/rl/         GRPO trainer, warm start, reward environments, prompts, presets, control
+src/pck/rl/         GRPO trainer, vLLM rollouts, warm start, reward environments, prompts,
+                    presets, control
 src/pck/manifest.py pinned checker hash and certified-variant manifests
 tests/              pytest + Hypothesis (CPU); tests/gpu/ needs a GPU, tests/rl/ the rl extra
 lean/               Lean 4 + Mathlib proofs (T1-T4, top-k, top-p)

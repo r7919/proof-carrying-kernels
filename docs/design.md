@@ -244,6 +244,13 @@ A reply without a parsable config scores like a kernel that never compiled.
   turn format, without re-rendering the conversation. Training therefore sees exactly the
   tokens sampling saw, even though Qwen3's template rewrites earlier turns.
 
+**Generation** is Hugging Face `generate()` in the trainer, or, with `generator = vllm`,
+a vLLM server in its own process (`vllm_backend.py`). After every update the trainer
+saves the LoRA adapter and hot-loads it into the server, so rollouts stay on-policy. The
+sampled token ids come back unchanged, and so do their log-probabilities under vLLM. The
+gap between those and the trainer's own (`mismatch`) measures how far the two engines'
+numerics differ, which the importance-ratio-1 update assumes is small.
+
 Each run writes `metrics.jsonl` (reward, pass, exploit and hack rates, and KL per step),
 sampled replies, a final evaluation and the adapter.
 

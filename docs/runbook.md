@@ -119,7 +119,34 @@ Knobs for a bigger run:
 | `group`, `prompts_per_step` | 8, 2 | 4, 2 | trajectories per step = group x prompts |
 | `lora_rank`, `lr`, `kl` | 16, 3e-4, 0.01 | 32, 1e-4, 0.02 | |
 | `gradient_checkpointing` | false | true | for longer multi-turn contexts |
+| `generator` | hf | vllm | vLLM rollouts; see below |
 | `seed` | 0 | 0, 1, 2 | the plan asks for at least 3 seeds per regime |
+
+### Faster rollouts with vLLM
+
+Generation is the slowest part of a step. With `generator=vllm`, rollouts are sampled by
+a vLLM server, and the trainer keeps only the update:
+
+```bash
+uv tool install vllm                                  # once, in vLLM's own environment
+uv run python -m pck.rl.train --config smoke --compare generator=vllm
+uv run python -m harness.bench_rollouts               # HF vs vLLM throughput, one step's rollouts
+```
+
+- **Its own environment.** vLLM pins its own torch version, so it is not a dependency of
+  this package. The trainer starts the server (`vllm_command`, default `vllm`), or uses a
+  running one given in `vllm_url`. A server you start yourself needs LoRA enabled and
+  runtime LoRA updates allowed (see `src/pck/rl/vllm_backend.py`).
+- **On-policy.** After every update the adapter is saved and hot-loaded into the server
+  under a new name, so each step samples from the current policy. Sampled token ids come
+  back as they are, so training sees exactly the sampled tokens.
+- **`mismatch`** in `metrics.jsonl` is the mean absolute difference per token between the
+  trainer's and vLLM's log-probability of the sampled tokens. The two engines' numerics
+  differ slightly. GRPO here assumes they are equal (importance ratio 1), so a mismatch
+  that grows during a run means the samples are drifting off-policy.
+- **Memory.** The server takes `vllm_gpu_memory` of the GPU (default 0.35) and the trainer
+  the rest. On 8 GB this fits Qwen3-0.6B. For 1.7B, lower `max_new_tokens` or
+  `vllm_max_model_len`, or use a bigger GPU.
 
 Notes:
 
@@ -127,9 +154,9 @@ Notes:
   was measured on the 5060. With `env = cuda`, every kernel is timed live against cuBLAS,
   so keep the GPU free of other work. Generation pauses while the environment runs, so
   the policy does not share the GPU with timing.
-- **Throughput.** Generation is plain Hugging Face `generate()`, with one trajectory per
-  forward pass in the update. For runs of thousands of steps, the generation step is the
-  place to switch to TRL with vLLM; the reward environments (`pck.rl.envs`) do not change.
+- **Throughput.** With the default `generator=hf`, generation is plain Hugging Face
+  `generate()`; use `generator=vllm` for longer runs. The update processes one trajectory
+  per forward pass.
 - **Validity.** If `valid` stays near 0, the model is not producing parsable configs. Look
   at `samples.jsonl`, raise `max_new_tokens`, or enable the warm start.
 
@@ -193,8 +220,8 @@ by a stated assumption in [design.md](design.md#assumed-not-proven).
   is off by 15-27x the per-row bound (about 1e-4 of the output scale) can pass
   (`harness/hack_anatomy_out.txt`). A smaller block `b` gives finer detection at more
   traffic.
-- **Training scale.** HF generation, BF16 LoRA (no 4-bit QLoRA) and a single GPU are
-  enough for the 0.6B and 1.7B presets. Longer runs would benefit from vLLM generation
-  and concurrent environment workers.
+- **Training scale.** BF16 LoRA (no 4-bit QLoRA) on a single GPU is enough for the 0.6B
+  and 1.7B presets, with vLLM for generation. Longer runs would benefit from concurrent
+  environment workers and, on several GPUs, a distributed update (e.g. DeepSpeed ZeRO).
 - **The plan's 0.6B size baseline** is a config change (`model=Qwen/Qwen3-0.6B` on the
   pilot preset).
