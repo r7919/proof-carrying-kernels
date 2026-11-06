@@ -220,35 +220,55 @@ def rollout_single(
     return trajs
 
 
+@dataclass
+class _Turns:
+    """One multi-turn trajectory in progress."""
+
+    ep: Any
+    ids: list[int]
+    mask: list[int]
+    replies: list[str]
+    logps: list[float] | None
+
+
 def rollout_multi(
-    policy: Policy, env: EpisodeEnv, task: Task, rng: np.random.Generator
-) -> Trajectory:
+    policy: Policy,
+    env: TableEnv | EpisodeEnv,
+    task: Task,
+    rng: np.random.Generator,
+    group: int | None = None,
+) -> list[Trajectory]:
+    """``group`` multi-turn episodes in lockstep: each turn, one batched generation for
+    every episode still running, then each episode's tool call."""
     cfg = policy.cfg
-    ep = env.start(task, rng, max_calls=cfg.turns)
     prompt = multi_turn(task, locks(task), cfg.slot_code, cfg.turns)
-    ids = policy.encode(policy.render([{"role": "user", "content": prompt}]))
-    mask = [0] * len(ids)
-    replies = []
-    logps: list[float] | None = []
-    while ep.result is None:
-        g = policy.generate([ids])[0]
-        gen = g.ids
-        logps = None if logps is None or g.logps is None else logps + g.logps
-        ids, mask = ids + gen, mask + [1] * len(gen)
-        text = policy.decode(gen)
-        replies.append(text)
-        call = parse_call(text)
-        if call is None:
-            reply = ep.call("unparsable", {})
-        else:
-            tool, args = call
-            if tool == "write_kernel" and not cfg.slot_code:
-                args = {k: v for k, v in args.items() if k != "slot_code"}
-            reply = ep.call(tool, args)
-        if ep.result is None:
-            extra = policy.reply_tokens(gen, reply)
-            ids, mask = ids + extra, mask + [0] * len(extra)
-    return Trajectory(ids, mask, outcome(ep), "\n---\n".join(replies), logps or None)
+    start = policy.encode(policy.render([{"role": "user", "content": prompt}]))
+    runs = [
+        _Turns(env.start(task, rng, max_calls=cfg.turns), list(start), [0] * len(start), [], [])
+        for _ in range(group or cfg.group)
+    ]
+    while active := [r for r in runs if r.ep.result is None]:
+        for r, g in zip(active, policy.generate([r.ids for r in active]), strict=True):
+            gen = g.ids
+            r.logps = None if r.logps is None or g.logps is None else r.logps + g.logps
+            r.ids, r.mask = r.ids + gen, r.mask + [1] * len(gen)
+            text = policy.decode(gen)
+            r.replies.append(text)
+            call = parse_call(text)
+            if call is None:
+                reply = r.ep.call("unparsable", {})
+            else:
+                tool, args = call
+                if tool == "write_kernel" and not cfg.slot_code:
+                    args = {k: v for k, v in args.items() if k != "slot_code"}
+                reply = r.ep.call(tool, args)
+            if r.ep.result is None:
+                extra = policy.reply_tokens(gen, reply)
+                r.ids, r.mask = r.ids + extra, r.mask + [0] * len(extra)
+    return [
+        Trajectory(r.ids, r.mask, outcome(r.ep), "\n---\n".join(r.replies), r.logps or None)
+        for r in runs
+    ]
 
 
 def rollouts(
@@ -256,8 +276,7 @@ def rollouts(
 ) -> list[Trajectory]:
     if policy.cfg.turns == 1:
         return rollout_single(policy, env, task, rng)
-    assert isinstance(env, EpisodeEnv)
-    return [rollout_multi(policy, env, task, rng) for _ in range(policy.cfg.group)]
+    return rollout_multi(policy, env, task, rng)
 
 
 def advantages(rewards: Sequence[float]) -> list[float]:

@@ -16,7 +16,7 @@ transformers = pytest.importorskip("transformers")
 pytest.importorskip("peft")
 
 from pck.rl.config import RunConfig  # noqa: E402
-from pck.rl.envs import EpisodeEnv, Outcome  # noqa: E402
+from pck.rl.envs import EpisodeEnv, Outcome, TableEnv  # noqa: E402
 from pck.rl.train import (  # noqa: E402
     Policy,
     Trajectory,
@@ -72,7 +72,7 @@ def test_turn_separator_closes_and_reopens_turns(tokenizer: Any) -> None:
 def test_multi_turn_rollouts_mask_only_the_policy(tokenizer: Any) -> None:
     p = policy(tokenizer, env="emulator", turns=3)
     task, rng = p.cfg.train_tasks()[0], np.random.default_rng(0)
-    traj = rollout_multi(p, EpisodeEnv("calibrated"), task, rng)
+    [traj] = rollout_multi(p, EpisodeEnv("calibrated"), task, rng, group=1)
     assert len(traj.ids) == len(traj.mask) and traj.outcome.reward < 0  # random model: no config
     policy_text = p.tok.decode([t for t, m in zip(traj.ids, traj.mask, strict=True) if m])
     assert "Write a fast CUDA kernel" not in policy_text
@@ -190,3 +190,21 @@ def test_batched_logps_match_one_at_a_time(tokenizer: Any) -> None:
     for b, s in zip(batched, single, strict=True):
         assert b.shape == s.shape
         torch.testing.assert_close(b, s, atol=1e-5, rtol=1e-5)
+
+
+def test_multi_turn_training_runs_on_the_tables(tokenizer: Any, tmp_path: Path) -> None:
+    p = policy(
+        tokenizer,
+        out=str(tmp_path),
+        name="mt",
+        tasks=("896x896-gauss",),
+        env="table",
+        turns=3,
+        group=3,
+        prompts_per_step=1,
+    )
+    env = TableEnv("calibrated")
+    trajs = rollout_multi(p, env, p.cfg.train_tasks()[0], np.random.default_rng(0))
+    assert len(trajs) == 3 and all(t.text.count("---") == 2 for t in trajs)  # 3 turns each
+    summary = train(p.cfg, p, log=False)
+    assert summary["regime"] == "calibrated"

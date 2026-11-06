@@ -24,7 +24,7 @@ from pck.agent.config import Config, config_space, is_exploit
 from pck.agent.spec import static_check
 from pck.agent.task import Task
 from pck.agent.tasks import locks
-from pck.rl.envs import EpisodeEnv, _arms
+from pck.rl.envs import EpisodeEnv, TableEnv, _arms
 from pck.rl.prompt import multi_turn, single_turn
 
 if TYPE_CHECKING:
@@ -61,7 +61,11 @@ def demo_single(policy: Policy, task: Task, rng: np.random.Generator) -> Tokens:
 
 
 def demo_multi(
-    policy: Policy, env: EpisodeEnv, task: Task, rng: np.random.Generator, max_calls: int
+    policy: Policy,
+    env: TableEnv | EpisodeEnv,
+    task: Task,
+    rng: np.random.Generator,
+    max_calls: int,
 ) -> Tokens:
     locked = locks(task)
     ep = env.start(task, rng, max_calls=max_calls)
@@ -98,7 +102,9 @@ def warm_start(
     from pck.rl.train import token_logps
 
     cfg = policy.cfg
-    env = EpisodeEnv(cfg.regime) if cfg.turns > 1 else None
+    env: TableEnv | EpisodeEnv | None = None
+    if cfg.turns > 1:  # demonstrations are played in the run's own environment kind
+        env = TableEnv(cfg.regime) if cfg.env == "table" else EpisodeEnv(cfg.regime)
     demos = []
     for _ in range(cfg.warm_start_examples):
         task = tasks[int(rng.integers(len(tasks)))]
