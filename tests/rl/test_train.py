@@ -211,8 +211,8 @@ def test_multi_turn_training_runs_on_the_tables(tokenizer: Any, tmp_path: Path) 
 
 
 def test_slot_runs_demonstrate_honest_slots(tokenizer: Any) -> None:
-    from pck.rl.prompt import parse_config
-    from pck.rl.warmstart import HONEST_SLOT, demo_single
+    from pck.rl.prompt import HONEST_SLOT, parse_config
+    from pck.rl.warmstart import demo_single
 
     p = policy(tokenizer, env="cuda", slot_code=True, lock_exploit_knobs=True)
     rng = np.random.default_rng(0)

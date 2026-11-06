@@ -154,6 +154,6 @@ def test_locked_exploit_knobs_leave_only_slot_code() -> None:
 
 def test_the_honest_demonstration_slot_is_accepted() -> None:
     from pck.agent.sandbox import check_slot
-    from pck.rl.warmstart import HONEST_SLOT
+    from pck.rl.prompt import HONEST_SLOT
 
     assert check_slot(HONEST_SLOT, "row") == [] and check_slot(HONEST_SLOT, "col") == []

@@ -25,7 +25,7 @@ from pck.agent.spec import static_check
 from pck.agent.task import Task
 from pck.rl.config import run_locks
 from pck.rl.envs import EpisodeEnv, TableEnv, _arms
-from pck.rl.prompt import multi_turn, single_turn
+from pck.rl.prompt import HONEST_SLOT, multi_turn, single_turn
 
 if TYPE_CHECKING:
     from pck.rl.train import Policy
@@ -47,12 +47,6 @@ def _compact(cfg: Config, locked: dict[str, object]) -> dict[str, Any]:
 
 Tokens = tuple[list[int], list[int]]
 """Token ids and the policy mask."""
-
-HONEST_SLOT = (
-    "__device__ float pck_slot_term(float w, float x, int64_t j) { return __fmul_rn(w, x); }"
-)
-"""The exact product (what the template does without a slot), so demonstrations show the
-slot's syntax without showing any shortcut."""
 
 
 def _slot(policy: Policy, rng: np.random.Generator) -> str | None:

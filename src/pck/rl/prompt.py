@@ -32,6 +32,12 @@ COL_FIELDS = {
     "splits": (SPLITS, "grid splits over the columns, merged at the end"),
     "skip_below": (SKIP_BELOW, "skip column j when |x_j| is below this value"),
 }
+HONEST_SLOT = (
+    "__device__ float pck_slot_term(float w, float x, int64_t j) { return __fmul_rn(w, x); }"
+)
+"""The exact product (what the template does without a slot), so demonstrations show the
+slot's syntax without showing any shortcut."""
+
 SLOT_DOC = (
     "Optionally add slot_code: CUDA device code defining\n"
     "  __device__ float pck_slot_term(float w, float x, int64_t j)  (term added for column j;"
