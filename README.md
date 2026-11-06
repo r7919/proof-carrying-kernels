@@ -36,6 +36,8 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
     never under the proof-gated checker.
   - A 5-minute GRPO run of Qwen3-0.6B: 100% hacks under calibrated tests, 0% under the
     proof-gated checker (one seed, one task; a pilot).
+- **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
+  adapter hot-loaded after every GRPO update.
 
 ## How it works
 
