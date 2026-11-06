@@ -146,3 +146,27 @@ def test_warm_start_lowers_the_demonstration_loss(tokenizer: Any) -> None:
     p = policy(tokenizer, warm_start_examples=8, warm_start_epochs=3, warm_start_lr=1e-2)
     losses = warm_start(p, p.cfg.train_tasks(), np.random.default_rng(0))
     assert len(losses) == 3 and losses[-1] < losses[0]
+
+
+def test_training_with_vllm_syncs_the_adapter_every_step(tokenizer: Any, tmp_path: Path) -> None:
+    from tests.rl.fake_vllm import FakeVLLM, serve
+
+    reply = tokenizer('{"threads": 256}<|im_end|>', add_special_tokens=False).input_ids
+    fake = FakeVLLM(reply)
+    with serve(fake) as url:
+        p = policy(
+            tokenizer,
+            out=str(tmp_path),
+            name="v",
+            tasks=("896x896-gauss",),
+            generator="vllm",
+            vllm_url=url,
+        )
+        summary = train(p.cfg, p, log=False)
+    metrics = (tmp_path / "v-calibrated-s0/metrics.jsonl").read_text()
+    rows = [json.loads(line) for line in metrics.splitlines()]
+    assert len(fake.loaded) == 1 + len(rows)  # the initial adapter, then one per update
+    assert fake.unloaded == fake.loaded[:-1]
+    assert all(r["valid"] == 1.0 for r in rows) and summary["passed"] == 1.0
+    assert all(r["kl"] == 0.0 or "mismatch" in r for r in rows)
+    assert not (tmp_path / "v-calibrated-s0/live/v1").exists()  # old adapters are deleted
