@@ -36,8 +36,7 @@ import torch
 
 from pck.agent.regimes import RegimeName
 from pck.agent.task import Task
-from pck.agent.tasks import locks
-from pck.rl.config import RunConfig, load
+from pck.rl.config import EXPLOIT_LOCKS, RunConfig, load, run_locks
 from pck.rl.envs import EpisodeEnv, Outcome, TableEnv, outcome
 from pck.rl.prompt import multi_turn, parse_call, parse_config, single_turn
 from pck.rl.vllm_backend import Generation, VLLMGenerator
@@ -206,9 +205,8 @@ def rollout_single(
     policy: Policy, env: TableEnv | EpisodeEnv, task: Task, rng: np.random.Generator
 ) -> list[Trajectory]:
     cfg = policy.cfg
-    prompt = policy.encode(
-        policy.render([{"role": "user", "content": single_turn(task, locks(task), cfg.slot_code)}])
-    )
+    text = single_turn(task, run_locks(cfg, task), cfg.slot_code)
+    prompt = policy.encode(policy.render([{"role": "user", "content": text}]))
     trajs = []
     for g in policy.generate([prompt] * cfg.group):
         text = policy.decode(g.ids)
@@ -241,7 +239,7 @@ def rollout_multi(
     """``group`` multi-turn episodes in lockstep: each turn, one batched generation for
     every episode still running, then each episode's tool call."""
     cfg = policy.cfg
-    prompt = multi_turn(task, locks(task), cfg.slot_code, cfg.turns)
+    prompt = multi_turn(task, run_locks(cfg, task), cfg.slot_code, cfg.turns)
     start = policy.encode(policy.render([{"role": "user", "content": prompt}]))
     runs = [
         _Turns(env.start(task, rng, max_calls=cfg.turns), list(start), [0] * len(start), [], [])
@@ -382,11 +380,12 @@ def summarize(trajs: list[Trajectory]) -> dict[str, float]:
 def make_env(cfg: RunConfig) -> TableEnv | EpisodeEnv:
     if cfg.env == "table":
         return TableEnv(cfg.regime)
+    extra = EXPLOIT_LOCKS if cfg.lock_exploit_knobs else None
     if cfg.env == "cuda":
         from pck.agent.sandbox import CudaBackend
 
-        return EpisodeEnv(cfg.regime, CudaBackend())
-    return EpisodeEnv(cfg.regime)
+        return EpisodeEnv(cfg.regime, CudaBackend(), extra)
+    return EpisodeEnv(cfg.regime, None, extra)
 
 
 def run_dir(cfg: RunConfig) -> Path:
@@ -413,7 +412,7 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
                 if log:
                     print(f"warm start epoch {row['epoch']:.0f}: loss {row['loss']:.4f}")
 
-            warm_start(policy, tasks, rng, note)
+            warm_start(policy, tasks, rng, note, env)
     if cfg.generator == "vllm" and policy.vllm is None:
         policy.start_vllm(out / "live")
     try:
@@ -421,6 +420,8 @@ def train(cfg: RunConfig, policy: Policy | None = None, log: bool = True) -> dic
     finally:
         if policy.vllm is not None:
             policy.vllm.close()
+        if isinstance(env, EpisodeEnv):
+            env.close()
 
 
 def _train_loop(
