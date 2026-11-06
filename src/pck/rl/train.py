@@ -87,6 +87,7 @@ class Policy:
             lora_rank=cfg.lora_rank,
             gpu_memory=cfg.vllm_gpu_memory,
             max_model_len=cfg.vllm_max_model_len,
+            max_num_seqs=cfg.vllm_max_num_seqs,
             command=cfg.vllm_command,
             port=cfg.vllm_port,
         )

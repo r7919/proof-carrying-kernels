@@ -6,7 +6,8 @@ its own, so it is not a dependency of this package. Install it once, e.g.
 and either let the trainer start it (``vllm_url`` unset) or start it yourself and set
 ``vllm_url``; it must then run with LoRA enabled and runtime LoRA updates allowed:
   VLLM_ALLOW_RUNTIME_LORA_UPDATING=True vllm serve Qwen/Qwen3-0.6B --enable-lora \\
-      --max-lora-rank 16 --gpu-memory-utilization 0.35 --port 8000
+      --max-lora-rank 16 --gpu-memory-utilization 0.35 --max-model-len 2048 \\
+      --max-num-seqs 32 --port 8000
 
 Each GRPO step (`VLLMGenerator.sync`) saves the trainer's LoRA adapter and hot-loads it
 into the server under a new name, so every rollout is sampled from the current policy.
@@ -73,7 +74,8 @@ class VLLMGenerator:
         eos_id: int | None = None,
         lora_rank: int = 16,
         gpu_memory: float = 0.35,
-        max_model_len: int = 4096,
+        max_model_len: int = 2048,
+        max_num_seqs: int = 32,
         command: str = "vllm",
         port: int = 8000,
         start_timeout: float = 600.0,
@@ -85,13 +87,16 @@ class VLLMGenerator:
         self.adapter: str | None = None
         if url is None:
             url = f"http://127.0.0.1:{port}"
-            self.process = self._start(command, port, lora_rank, gpu_memory, max_model_len)
+            sizes = (gpu_memory, max_model_len, max_num_seqs)
+            self.process = self._start(command, port, lora_rank, *sizes)
         self.url = url.rstrip("/")
         self._wait(start_timeout)
 
     def _start(
-        self, command: str, port: int, rank: int, gpu_memory: float, max_len: int
+        self, command: str, port: int, rank: int, gpu_memory: float, max_len: int, seqs: int
     ) -> subprocess.Popen[bytes]:
+        # --max-num-seqs: a GRPO step runs a few dozen sequences at most; vLLM's default
+        # (hundreds) captures a CUDA graph per batch size and spends the KV-cache memory.
         cmd = [
             *shlex.split(command),
             "serve",
@@ -107,6 +112,8 @@ class VLLMGenerator:
             str(gpu_memory),
             "--max-model-len",
             str(max_len),
+            "--max-num-seqs",
+            str(seqs),
             "--dtype",
             "bfloat16",
         ]

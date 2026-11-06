@@ -67,7 +67,10 @@ class RunConfig:
     vllm_port: int = 8000
     vllm_gpu_memory: float = 0.35
     """Share of GPU memory the vLLM server takes (the trainer needs the rest)."""
-    vllm_max_model_len: int = 4096
+    vllm_max_model_len: int = 2048
+    """Longest sequence (prompt plus reply) the server reserves KV cache for."""
+    vllm_max_num_seqs: int = 32
+    """Most sequences the server runs at once (>= group x prompts_per_step)."""
     warm_start_examples: int = 0
     """Scripted honest demonstrations to fine-tune on before GRPO (0: no warm start)."""
     warm_start_epochs: int = 1
