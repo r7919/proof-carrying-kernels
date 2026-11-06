@@ -23,7 +23,7 @@ import torch
 from pck.agent.config import Config, config_space, is_exploit
 from pck.agent.spec import static_check
 from pck.agent.task import Task
-from pck.agent.tasks import locks
+from pck.rl.config import run_locks
 from pck.rl.envs import EpisodeEnv, TableEnv, _arms
 from pck.rl.prompt import multi_turn, single_turn
 
@@ -48,15 +48,28 @@ def _compact(cfg: Config, locked: dict[str, object]) -> dict[str, Any]:
 Tokens = tuple[list[int], list[int]]
 """Token ids and the policy mask."""
 
+HONEST_SLOT = (
+    "__device__ float pck_slot_term(float w, float x, int64_t j) { return __fmul_rn(w, x); }"
+)
+"""The exact product (what the template does without a slot), so demonstrations show the
+slot's syntax without showing any shortcut."""
+
+
+def _slot(policy: Policy, rng: np.random.Generator) -> str | None:
+    """An honest slot for half of the demonstrations of a run that offers slot code."""
+    return HONEST_SLOT if policy.cfg.slot_code and rng.random() < 0.5 else None
+
 
 def demo_single(policy: Policy, task: Task, rng: np.random.Generator) -> Tokens:
-    locked = locks(task)
-    prompt = policy.encode(
-        policy.render([{"role": "user", "content": single_turn(task, locked, False)}])
-    )
+    locked = run_locks(policy.cfg, task)
+    text = single_turn(task, locked, policy.cfg.slot_code)
+    prompt = policy.encode(policy.render([{"role": "user", "content": text}]))
     cfgs = honest_configs(task)
     cfg = cfgs[int(rng.integers(len(cfgs)))]
-    reply = policy.encode(json.dumps(_compact(cfg, locked)) + (policy.tok.eos_token or ""))
+    fields = _compact(cfg, locked)
+    if (slot := _slot(policy, rng)) is not None:
+        fields["slot_code"] = slot
+    reply = policy.encode(json.dumps(fields) + (policy.tok.eos_token or ""))
     return prompt + reply, [0] * len(prompt) + [1] * len(reply)
 
 
@@ -67,14 +80,17 @@ def demo_multi(
     rng: np.random.Generator,
     max_calls: int,
 ) -> Tokens:
-    locked = locks(task)
+    locked = run_locks(policy.cfg, task)
     ep = env.start(task, rng, max_calls=max_calls)
-    prompt = multi_turn(task, locked, False, max_calls)
+    prompt = multi_turn(task, locked, policy.cfg.slot_code, max_calls)
     ids = policy.encode(policy.render([{"role": "user", "content": prompt}]))
     mask = [0] * len(ids)
     cfgs = honest_configs(task)
     cfg = cfgs[int(rng.integers(len(cfgs)))]
-    write = ("write_kernel", {"config": _compact(cfg, locked)})
+    args: dict[str, Any] = {"config": _compact(cfg, locked)}
+    if (slot := _slot(policy, rng)) is not None:
+        args["slot_code"] = slot
+    write = ("write_kernel", args)
     script: list[tuple[str, dict[str, Any]]] = (
         [write, ("compile", {}), ("benchmark", {}), ("run_checker", {}), ("submit", {})]
         if max_calls >= 5
@@ -97,14 +113,19 @@ def warm_start(
     tasks: list[Task],
     rng: np.random.Generator,
     log: Callable[[dict[str, float]], None] | None = None,
+    env: TableEnv | EpisodeEnv | None = None,
 ) -> list[float]:
-    """Fine-tune the adapter on demonstrations; returns the mean loss per epoch."""
-    from pck.rl.train import token_logps
+    """Fine-tune the adapter on demonstrations; returns the mean loss per epoch.
+
+    Multi-turn demonstrations are played in ``env``, the run's own environment (a fresh
+    one of the run's kind if None)."""
+    from pck.rl.train import make_env, token_logps
 
     cfg = policy.cfg
-    env: TableEnv | EpisodeEnv | None = None
-    if cfg.turns > 1:  # demonstrations are played in the run's own environment kind
-        env = TableEnv(cfg.regime) if cfg.env == "table" else EpisodeEnv(cfg.regime)
+    if cfg.turns == 1:
+        env = None
+    elif env is None:
+        env = make_env(cfg)
     demos = []
     for _ in range(cfg.warm_start_examples):
         task = tasks[int(rng.integers(len(tasks)))]

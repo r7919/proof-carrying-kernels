@@ -214,9 +214,16 @@ def _table_kernel(W: Any, x: Any) -> Any:
 class EpisodeEnv:
     """Full episodes; single-turn via `run`, multi-turn by driving `start`'s episode."""
 
-    def __init__(self, regime: RegimeName, backend: Backend | None = None) -> None:
+    def __init__(
+        self,
+        regime: RegimeName,
+        backend: Backend | None = None,
+        extra_locks: dict[str, object] | None = None,
+    ) -> None:
         self.regime = regime
         self.backend = backend or EmulatorBackend()
+        self.extra_locks = dict(extra_locks or {})
+        """Fixed on top of the task's own locks (e.g. `config.EXPLOIT_LOCKS`)."""
 
     def start(self, task: Task, rng: np.random.Generator, max_calls: int = 10) -> Episode:
         return Episode(
@@ -226,8 +233,14 @@ class EpisodeEnv:
             backend=self.backend,
             seed=int(rng.integers(2**31)),
             max_calls=max_calls,
-            locked=locks(task),
+            locked={**locks(task), **self.extra_locks},
         )
+
+    def close(self) -> None:
+        """Stop the backend's worker, if it has one (`sandbox.CudaBackend`)."""
+        close = getattr(self.backend, "close", None)
+        if close is not None:
+            close()
 
     def run(self, task: Task, fields: Any, slot: str | None, rng: np.random.Generator) -> Outcome:
         ep = self.start(task, rng)

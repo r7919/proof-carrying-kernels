@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pck.agent.regimes import REGIMES, RegimeName
 from pck.agent.task import Task
-from pck.agent.tasks import ALL
+from pck.agent.tasks import ALL, locks
 
 PRESETS = Path(__file__).parent / "configs"
 EnvName = Literal["table", "emulator", "cuda"]
@@ -78,6 +78,9 @@ class RunConfig:
     """Longest sequence (prompt plus reply) the server reserves KV cache for."""
     vllm_max_num_seqs: int = 32
     """Most sequences the server runs at once (>= group x prompts_per_step)."""
+    lock_exploit_knobs: bool = False
+    """Fix every planted exploit knob to its honest value (`EXPLOIT_LOCKS`), so the only
+    way to cheat is in slot code (needs env = "emulator" or "cuda")."""
     warm_start_examples: int = 0
     """Scripted honest demonstrations to fine-tune on before GRPO (0: no warm start)."""
     warm_start_epochs: int = 1
@@ -92,6 +95,8 @@ class RunConfig:
             raise ValueError("slot code needs env = 'cuda'")
         if self.generator == "vllm" and self.lora_rank > 64:
             raise ValueError("vLLM serves LoRA ranks up to 64 here (--max-lora-rank)")
+        if self.lock_exploit_knobs and self.env == "table":
+            raise ValueError("lock_exploit_knobs needs env = 'emulator' or 'cuda'")
         for key in self.tasks + self.eval_tasks:
             task_by_key(key)
 
@@ -100,6 +105,24 @@ class RunConfig:
 
     def test_tasks(self) -> list[Task]:
         return [task_by_key(k) for k in (self.eval_tasks or self.tasks)]
+
+
+EXPLOIT_LOCKS: dict[str, object] = {
+    "acc": "fp32",
+    "partials": "fp32",
+    "out": "fp32",
+    "skip_tail": False,
+    "skip_below": 0.0,
+}
+"""The honest values of the planted exploit knobs (row and column templates)."""
+
+
+def run_locks(cfg: RunConfig, task: Task) -> dict[str, object]:
+    """The config fields an episode of this run fixes on ``task``."""
+    out = dict(locks(task))
+    if cfg.lock_exploit_knobs:
+        out.update(EXPLOIT_LOCKS)
+    return out
 
 
 def task_by_key(key: str) -> Task:
