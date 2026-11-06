@@ -277,34 +277,69 @@ def token_logps(model: Any, ids: list[int], mask: list[int]) -> tuple[torch.Tens
     return torch.log_softmax(logits, -1).gather(1, x[0, pos, None]).squeeze(1), pos
 
 
+def batch_logps(model: Any, batch: Sequence[tuple[list[int], list[int]]]) -> list[torch.Tensor]:
+    """`token_logps` for several sequences in one forward pass: left-padded, with explicit
+    position ids (so padding does not shift the rotary positions), and logits computed only
+    from the first policy token on (``logits_to_keep``), not for the whole prompt."""
+    device = next(model.parameters()).device
+    width = max(len(ids) for ids, _ in batch)
+    pad = [width - len(ids) for ids, _ in batch]
+    x = torch.tensor([[0] * p + ids for p, (ids, _) in zip(pad, batch, strict=True)], device=device)
+    attn = torch.tensor(
+        [[0] * p + [1] * len(ids) for p, (ids, _) in zip(pad, batch, strict=True)], device=device
+    )
+    positions = (attn.cumsum(1) - 1).clamp(min=0)
+    targets = [
+        [p + i for i in range(1, len(ids)) if mask[i]]
+        for p, (ids, mask) in zip(pad, batch, strict=True)
+    ]
+    first = min((t[0] for t in targets if t), default=width - 1)
+    keep = width - first + 1  # logits at positions first - 1 .. width - 1
+    logits = model(
+        input_ids=x, attention_mask=attn, position_ids=positions, logits_to_keep=keep
+    ).logits
+    out = []
+    for b, tgt in enumerate(targets):
+        idx = torch.tensor(tgt, device=device, dtype=torch.long)
+        rows = logits[b, idx - 1 - (width - keep)].float()
+        out.append(torch.log_softmax(rows, -1).gather(1, x[b, idx, None]).squeeze(1))
+    return out
+
+
 def grpo_loss(policy: Policy, groups: list[list[Trajectory]]) -> dict[str, float]:
-    """Accumulate the GRPO gradient of a batch of groups; returns loss statistics."""
+    """Accumulate the GRPO gradient of a batch of groups; returns loss statistics.
+
+    Trajectories go through the model ``update_batch`` at a time, policy and reference."""
     model, beta = policy.model, policy.cfg.kl
     batch = [
         (t, a)
         for g in groups
         for t, a in zip(g, advantages([t.outcome.reward for t in g]), strict=True)
+        if not ((a == 0.0 and beta == 0.0) or sum(t.mask) == 0)
     ]
     tokens = sum(sum(t.mask) for t, _ in batch) or 1
     kl_sum, n = 0.0, 0
     gap_sum, gap_n = 0.0, 0
-    for traj, adv in batch:
-        if (adv == 0.0 and beta == 0.0) or sum(traj.mask) == 0:
-            continue
-        logp, _ = token_logps(model, traj.ids, traj.mask)
-        if traj.gen_logps is not None and len(traj.gen_logps) == len(logp):
-            # generator vs trainer: the two engines' numerics differ slightly
-            gen = torch.tensor(traj.gen_logps, device=logp.device)
-            gap_sum += float((logp.detach() - gen).abs().sum())
-            gap_n += len(logp)
+    size = max(1, policy.cfg.update_batch)
+    for start in range(0, len(batch), size):
+        chunk = batch[start : start + size]
+        seqs = [(t.ids, t.mask) for t, _ in chunk]
+        logps = batch_logps(model, seqs)
         with torch.no_grad(), model.disable_adapter():
-            ref, _ = token_logps(model, traj.ids, traj.mask)
-        delta = ref - logp
-        kl = torch.exp(delta) - delta - 1.0
-        loss = -(adv * logp - beta * kl).sum() / tokens
+            refs = batch_logps(model, seqs)
+        loss = torch.zeros((), device=logps[0].device)
+        for (traj, adv), logp, ref in zip(chunk, logps, refs, strict=True):
+            if traj.gen_logps is not None and len(traj.gen_logps) == len(logp):
+                # generator vs trainer: the two engines' numerics differ slightly
+                gen = torch.tensor(traj.gen_logps, device=logp.device)
+                gap_sum += float((logp.detach() - gen).abs().sum())
+                gap_n += len(logp)
+            delta = ref - logp
+            kl = torch.exp(delta) - delta - 1.0
+            loss = loss - (adv * logp - beta * kl).sum() / tokens
+            kl_sum += float(kl.detach().sum())
+            n += len(logp)
         loss.backward()
-        kl_sum += float(kl.detach().sum())
-        n += len(logp)
     stats = {"kl": kl_sum / max(n, 1)}
     if gap_n:
         stats["mismatch"] = gap_sum / gap_n  # mean |log p_trainer - log p_generator|
