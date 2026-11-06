@@ -170,3 +170,23 @@ def test_training_with_vllm_syncs_the_adapter_every_step(tokenizer: Any, tmp_pat
     assert all(r["valid"] == 1.0 for r in rows) and summary["passed"] == 1.0
     assert all(r["kl"] == 0.0 or "mismatch" in r for r in rows)
     assert not (tmp_path / "v-calibrated-s0/live/v1").exists()  # old adapters are deleted
+
+
+def test_batched_logps_match_one_at_a_time(tokenizer: Any) -> None:
+    from pck.rl.train import batch_logps
+
+    p = policy(tokenizer)
+    rng = np.random.default_rng(0)
+    seqs = []
+    for length, spans in [(30, [(20, 30)]), (12, [(8, 12)]), (40, [(10, 15), (30, 40)])]:
+        ids = [int(t) for t in rng.integers(10, 1000, size=length)]
+        mask = [0] * length
+        for lo, hi in spans:  # policy tokens; the third has two turns with a reply between
+            mask[lo:hi] = [1] * (hi - lo)
+        seqs.append((ids, mask))
+    with torch.no_grad():
+        batched = batch_logps(p.model, seqs)
+        single = [token_logps(p.model, ids, mask)[0] for ids, mask in seqs]
+    for b, s in zip(batched, single, strict=True):
+        assert b.shape == s.shape
+        torch.testing.assert_close(b, s, atol=1e-5, rtol=1e-5)
