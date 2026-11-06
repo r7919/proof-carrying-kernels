@@ -1,0 +1,12 @@
+{"step": 0, "reward": 1.2402549575070823, "text": "```json\n{\n  \"threads\": 128,\n  \"vec\": 4,\n  \"splits\": 8,\n  \"skip_below\": 0.0\n}\n```"}
+{"step": 1, "reward": 1.0157089552238805, "text": "```json\n{\n  \"threads\": 128,\n  \"vec\": 2,\n  \"splits\": 4,\n  \"skip_below\": 0.0\n}\n```"}
+{"step": 2, "reward": 0.9322317596566524, "text": "```json\n{\n  \"threads\": 128,\n  \"vec\": 8,\n  \"splits\": 4,\n  \"skip_below\": 0.0\n}\n```"}
+{"step": 3, "reward": 1.2402549575070823, "text": "```json\n{\n  \"threads\": 128,\n  \"vec\": 4,\n  \"splits\": 8,\n  \"skip_below\": 0.0\n}\n```"}
+{"step": 4, "reward": 1.284185228604924, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 8}\n```"}
+{"step": 5, "reward": 1.284185228604924, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 8, \"skip_below\": 0.0}\n```"}
+{"step": 6, "reward": 1.4636708860759495, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 16, \"skip_below\": 0.0}\n```"}
+{"step": 7, "reward": 1.284185228604924, "text": "{\"threads\": 256, \"vec\": 4, \"splits\": 8, \"skip_below\": 0.0}"}
+{"step": 8, "reward": 1.4636708860759495, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 16, \"skip_below\": 0.0}\n```"}
+{"step": 9, "reward": 1.4636708860759495, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 16, \"skip_below\": 0.0}\n```"}
+{"step": 10, "reward": 1.4636708860759495, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 16, \"skip_below\": 0.0}\n```"}
+{"step": 11, "reward": 1.4636708860759495, "text": "```json\n{\"threads\": 256, \"vec\": 4, \"splits\": 16, \"skip_below\": 0.0}\n```"}
