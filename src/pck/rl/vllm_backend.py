@@ -7,7 +7,7 @@ and either let the trainer start it (``vllm_url`` unset) or start it yourself an
 ``vllm_url``; it must then run with LoRA enabled and runtime LoRA updates allowed:
   VLLM_ALLOW_RUNTIME_LORA_UPDATING=True vllm serve Qwen/Qwen3-0.6B --enable-lora \\
       --max-lora-rank 16 --gpu-memory-utilization 0.35 --max-model-len 2048 \\
-      --max-num-seqs 32 --port 8000
+      --max-num-seqs 32 --generation-config vllm --port 8000
 
 Each GRPO step (`VLLMGenerator.sync`) saves the trainer's LoRA adapter and hot-loads it
 into the server under a new name, so every rollout is sampled from the current policy.
@@ -116,6 +116,11 @@ class VLLMGenerator:
             str(seqs),
             "--dtype",
             "bfloat16",
+            # vLLM's neutral sampling defaults, not the model's generation_config.json
+            # (Qwen3's sets temperature 0.6, top_k 20, top_p 0.95): GRPO must sample
+            # exactly with the settings the request gives.
+            "--generation-config",
+            "vllm",
         ]
         env = {**os.environ, "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "True"}
         return subprocess.Popen(cmd, env=env)
