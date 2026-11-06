@@ -72,6 +72,7 @@ each theorem to the code.
 | `t4_spread_computed` | **T4, spread-out errors**: every output only slightly off but \|\|D\|\|_2 >= 2x the threshold: passes at most 13/16 of sign vectors, (13/16)^K for K (Paley-Zygmund) |
 | `topK_check_iff_max_sum` | The top-k check accepts exactly the k-sets of largest total logit |
 | `topP_computed_minimal`, `topP_computed_sound` | **Top-p**: an accepted nucleus reaches mass p - slack and is no larger than any set of mass p + slack; a correct sampler always passes |
+| `topK_member_iff`, `topP_member_sound`, `topP_member_detects` | **Sampled-token membership** (for samplers that return only a token, like vLLM's): fewer than k larger logits iff the token is in a correct top-k set; a correct top-p sample always passes, and a rejected one is outside the nucleus by more than the sampler's tolerance |
 
 Assumptions (the rounding model, exact FP32 x BF16 products in FP64, the Dot2 bound for
 compensated summation, and the accuracy of the top-p checker's masses) are listed in [docs/design.md](docs/design.md#assumed-not-proven).
@@ -102,6 +103,11 @@ uv sync --extra rl
 uv run python -m pck.rl.train --config smoke --compare     # GRPO, calibrated vs proof-gated, ~10 min
 uv run python -m pck.rl.control                            # the non-LLM control, ~1 min on CPU
 ```
+
+The proven sampling check also runs inside vLLM as a plugin (`pck.vllm_plugin`). It
+checks every token vLLM samples against its logits and the request's top-k/top-p
+setting, on the GPU ([design](docs/design.md#the-check-inside-vllm),
+[runbook](docs/runbook.md#the-sampling-check-inside-vllm)).
 
 Training is GRPO with LoRA on a small chat model (Qwen3-0.6B in the smoke preset,
 Qwen3-1.7B in the pilot), with rollouts from Hugging Face or, with `generator=vllm`, a
@@ -144,6 +150,7 @@ src/pck/agent/      agent environment: templates and their CPU models, tasks, re
 src/pck/rl/         GRPO trainer, vLLM rollouts, warm start, reward environments, prompts,
                     presets, control
 src/pck/manifest.py pinned checker hash and certified-variant manifests
+src/pck/member.py   sampled-token membership checks; vllm_plugin.py runs them inside vLLM
 tests/              pytest + Hypothesis (CPU); tests/gpu/ needs a GPU, tests/rl/ the rl extra
 lean/               Lean 4 + Mathlib proofs (T1-T4, top-k, top-p)
 harness/            experiments, with their recorded outputs and the timing and verdict tables
