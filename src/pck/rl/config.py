@@ -58,9 +58,12 @@ class RunConfig:
     out: str = "runs"
     dtype: Literal["bfloat16", "float32"] = "bfloat16"
     gradient_checkpointing: bool = False
-    update_batch: int = 8
-    """Trajectories per forward pass in the update (policy and reference); lower it if the
-    update runs out of memory."""
+    update_batch: int = 2
+    """Trajectories per forward pass in the update (policy and reference). Larger batches
+    keep every layer's activations for all of them until the backward pass: on 8 GB, with
+    vLLM holding its share, 8 full sequences overflow the GPU, and under WSL2 it then
+    spills into shared system memory instead of failing, so steps slow down several times
+    (vLLM's throughput drops too). Raise it on a bigger GPU or with gradient checkpointing."""
     generator: Literal["hf", "vllm"] = "hf"
     """Rollout generation: Hugging Face generate() in the trainer, or a vLLM server
     (`pck.rl.vllm_backend`) that hot-loads the adapter every step."""
