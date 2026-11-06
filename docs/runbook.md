@@ -120,7 +120,7 @@ Knobs for a bigger run:
 | `lora_rank`, `lr`, `kl` | 16, 3e-4, 0.01 | 32, 1e-4, 0.02 | |
 | `gradient_checkpointing` | false | true | for longer multi-turn contexts |
 | `generator` | hf | vllm | vLLM rollouts; see below |
-| `update_batch` | 8 | 4-8 | trajectories per forward pass in the update; lower it on out-of-memory |
+| `update_batch` | 2 | 2-8 | trajectories per forward pass in the update; see the note on memory |
 | `seed` | 0 | 0, 1, 2 | the plan asks for at least 3 seeds per regime |
 
 ### Faster rollouts with vLLM
@@ -165,6 +165,11 @@ Notes:
   `generate()`; use `generator=vllm` for longer runs. With vLLM, the update becomes the
   larger part of a step. It runs `update_batch` trajectories per padded forward pass, and
   computes logits only from the first policy token on.
+- **GPU memory spills under WSL2.** If steps suddenly take several times longer (and
+  vLLM's throughput drops), the trainer and vLLM together have overflowed the GPU, and
+  WSL2 is paging into shared system memory instead of failing. Lower `update_batch`,
+  enable `gradient_checkpointing`, or give vLLM less memory (`vllm_gpu_memory`). On the
+  5060, `update_batch=8` with vLLM did this (24 s per step instead of about 4 s).
 - **Validity.** If `valid` stays near 0, the model is not producing parsable configs. Look
   at `samples.jsonl`, raise `max_new_tokens`, or enable the warm start.
 
