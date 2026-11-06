@@ -86,7 +86,7 @@ def check_member(
     return MemberVerdict(bool(r < top_p + slack), above, r)
 
 
-def check_members(
+def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is installed)
     logits: Any,
     tokens: Any,
     top_k: Any = None,
