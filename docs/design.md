@@ -92,10 +92,17 @@ rejects `sorry` and any non-standard axiom).
   TwoSum), which the real-number rounding model cannot express.
 - CUDA's FP32 `expf` is within 2 ulp and FP64 `exp` within 1 ulp (NVIDIA's documented
   bounds, without fast math), for the top-p masses.
-- The top-p checker's masses are within `gamma_{V+2}(u64)` of the true softmax masses on
-  the CPU (FP64 throughout), and within `16 u32 + V 2^-146 + gamma_{V+3S+16}(u64)` on the
+- The top-p checker's masses are within `softmax_eps(V, zmax)` of the true softmax masses
+  on the CPU (`pck.fp`: FP64 throughout, any summation order, `exp` within 2 ulp, and the
+  rounding of `l / T`, which grows with `zmax = max |l / T|`), and within `16 u32 + V 2^-146 + gamma_{V+3S+16}(u64)` on the
   GPU (`S` segments; FP32 `expf` on a split argument, FP64 sums; derivation in
-  `check_topp_gpu`). The top-p theorems take this error `eps` as a hypothesis.
+  `check_topp_gpu`; terms below `e^-128`, such as masked `-inf` logits, are dropped within
+  that allowance). The top-p theorems take this error `eps` as a hypothesis. The checkers
+  round `p - slack` down and `p + slack` up.
+- The GEMV checkers round every part of `tau` up (T3's hypotheses). On the CPU,
+  `pck.checker` bounds each round-to-nearest FP64 sum from above with `pck.fp.sum_up`, and
+  `a` is bounded the same way before it is rounded up to FP32 (BF16 on the GPU). A
+  threshold that overflows to infinity fails the check instead of accepting everything.
 - The proofs cover the checker's algorithm; the CUDA source is kept small and tested
   against FP64 references to close that gap.
 
@@ -134,11 +141,13 @@ top-k set). The fraction `r` of the survivors' softmax mass strictly above `t` m
 below `p + tol + eps`: a correct sample always passes (`topP_member_sound`), and a
 rejected one has `r >= p + tol` (`topP_member_detects`).
 
-- `eps` bounds the computed `r`. For the CPU reference (`member_eps`, 4.6e-11 at a 152k
-  vocabulary) it covers FP64 for any summation order, given FP64 `exp` within 2 ulp. The
+- `eps` bounds the computed `r`. For the CPU reference (`member_eps`, 6.3e-11 at a 152k
+  vocabulary, the shared `pck.fp.softmax_eps`) it covers FP64 for any summation order,
+  given FP64 `exp` within 2 ulp. The
   GPU check (`member_eps32`, 7.2e-7) computes each term in FP32 from an exact split
   `l - m = hi + lo` (TwoSum) as `expf(hi) (1 + lo)`, so each term is within 6 u32 of exact
-  given FP32 `expf` within 2 ulp, and sums in FP64. FP64 runs at 1/64 rate on consumer
+  (5.001 u32 with the second-order terms) given FP32 `expf` within 2 ulp, and sums in FP64.
+  A sampled id outside the vocabulary is rejected, never looked up. FP64 runs at 1/64 rate on consumer
   GPUs; 7.2e-7 is still far below the sampler's own `tol = 1e-4`.
 - When every row has a top-k, the GPU check computes `r` over the top `max k` logits
   only, plus the count of tokens tied at the k-th logit beyond them, so the softmax never
