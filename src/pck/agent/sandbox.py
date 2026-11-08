@@ -32,6 +32,7 @@ Compiles target ``$PCK_CUDA_ARCH`` (e.g. ``sm_120``; default ``native``) with nv
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import json
 import multiprocessing as mp
@@ -192,6 +193,13 @@ def _clean(log: str, build: Path) -> str:
     return "\n".join(lines[:40])
 
 
+@functools.cache
+def _nvcc_version() -> str:
+    """nvcc's version banner, part of the cache key (a toolkit upgrade rebuilds)."""
+    out = subprocess.run([_nvcc(), "--version"], capture_output=True, text=True, check=False)
+    return out.stdout
+
+
 def compile_variant(
     cfg: Config, slot: str | None, timeout: float = COMPILE_TIMEOUT
 ) -> tuple[Path | None, str]:
@@ -203,7 +211,7 @@ def compile_variant(
     source, header = _source(cfg, slot)
     arch = os.environ.get("PCK_CUDA_ARCH", "native")
     deps = "".join((CSRC / f).read_text() for f in ("template_kernel.cu", "column_kernel.cu"))
-    parts = [source, header or "", arch, deps, " ".join(NVCC_FLAGS), "isystem"]
+    parts = [source, header or "", arch, deps, " ".join(NVCC_FLAGS), "isystem", _nvcc_version()]
     key = hashlib.sha256("\0".join(parts).encode()).hexdigest()  # flags too
     out = cache_dir() / "slots" / key[:24]
     lib, err = out / "variant.so", out / "errors.txt"
@@ -242,11 +250,15 @@ def compile_variant(
             )
         except subprocess.TimeoutExpired:
             return None, f"compile timed out after {timeout:.0f} s"  # not cached
-        out.mkdir(parents=True, exist_ok=True)
         if proc.returncode != 0:
             message = "compile failed:\n" + _clean(proc.stdout + proc.stderr, build)
-            err.write_text(message)
+            # cache only a compiler diagnosis: a signal (e.g. an OOM kill, returncode < 0) or
+            # a failure without one is transient and must not fail this variant forever
+            if proc.returncode > 0 and "error" in (proc.stdout + proc.stderr):
+                out.mkdir(parents=True, exist_ok=True)
+                err.write_text(message)
             return None, message
+        out.mkdir(parents=True, exist_ok=True)
         tmp_lib = out / f"variant.{os.getpid()}.so"
         shutil.copyfile(build / "variant.so", tmp_lib)
         tmp_lib.replace(lib)  # atomic, so concurrent builds never see a partial file
