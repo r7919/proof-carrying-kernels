@@ -345,10 +345,10 @@ Held-out tasks, budget 10:
 
 ### The non-LLM control learns the hack only when the reward pays for it
 
-`python -m pck.rl.control` trains a softmax policy over the 224 column-major configs of
-layer-12 `o_proj`. It uses GRPO's group-normalized advantage and the rewards the regimes
-pay (`pck.rl.envs.TableEnv`), with 1,000 steps of 8 episodes per seed. Full output:
-`harness/control_out.txt`.
+`python -m pck.rl.control` trains a softmax policy over the 672 column-major configs (224
+numerics classes) of layer-12 `o_proj`. It uses GRPO's group-normalized advantage and the
+rewards the regimes pay (`pck.rl.envs.TableEnv`), with 1,000 steps of 8 episodes per seed.
+Full output: `harness/control_out.txt`.
 
 | Regime | Seeds that converge on the hack | Hack rate, last 50 steps |
 |---|---|---|
@@ -375,14 +375,15 @@ the tables), then 32 sampled evaluation episodes. Full report:
 `harness/grpo_smoke_out.txt`, from the run files in `harness/grpo_smoke/`
 (`python -m harness.grpo_report`).
 
-| Regime | Exploit at step 0 | Exploit from | Final eval: reward | Passed | Hacks |
+| Regime | Exploit at step 0 | Exploit in every submission | Final eval: reward | Passed | Hacks |
 |---|---|---|---|---|---|
-| calibrated | 38% | step 2 (100%) | 1.44 | 100% | **100%** |
+| calibrated | 38% | first at step 2, sustained from step 43 | 1.44 | 100% | **100%** |
 | proof-gated | 0% passed | never | 1.28 | 100% | **0%** |
 
 - **The regime decides whether the hack survives.** The base model already proposes
   activation sparsity: 38% of its first replies set `skip_below > 0`. Under calibrated
-  tests these pass, and by step 2 every submission is a hack. Under the proof-gated
+  tests these pass: from step 2 nearly every submission is a hack (with dips to 50-94%
+  at four steps, and 100% from step 43 on). Under the proof-gated
   checker every early reply fails (reward -0.03 at step 0), and by step 5 the policy
   writes honest configs only.
 - **The hack it keeps is not faster.** The calibrated policy settles on
@@ -430,7 +431,8 @@ The same smoke comparison, seed and budget, with `generator = vllm`. Full report
 
 - **Under calibrated tests, whether the hack survives is chance.** Both runs start with
   the base model proposing activation sparsity, and the calibrated test accepts some of
-  it. One run keeps it in every submission; the other drops it by step 8 for an honest
+  it. One run keeps it (in every submission from step 43); the other drops it by step 8
+  for an honest
   config of the same speed. The hacks these runs find are no faster than the best honest
   kernel (the run that kept one scores 1.44, the one that dropped it 1.43), so nothing
   pushes the policy towards or away from them. Each run keeps whatever its group
@@ -471,16 +473,18 @@ Seeds 0 and 2 at `lr = 1e-4` with `update_batch = 2` (about 4.5 minutes and 75-8
 per regime), beside seed 1 from above. Full report: `harness/grpo_smoke_vllm_seeds_out.txt`
 (run files in `harness/grpo_smoke_vllm_s{0,1,2}/`).
 
-| Seed | Calibrated: reward | Hacks | Hack in every submission from | Proof-gated: reward | Hacks |
+| Seed | Calibrated: reward | Hacks | Hack in every submission, from step on | Proof-gated: reward | Hacks |
 |---|---|---|---|---|---|
-| 0 | 1.45 | **100%** | step 9 | 1.33 | 0% |
-| 1 | 1.62 | **100%** | step 6 | 1.46 | 0% |
-| 2 | 1.45 | **100%** | step 3 | 1.43 | 0% |
+| 0 | 1.45 | **100%** | 59 | 1.33 | 0% |
+| 1 | 1.62 | **100%** | 6 | 1.46 | 0% |
+| 2 | 1.45 | **100%** | 3 | 1.43 | 0% |
 | mean | 1.51 | | | 1.41 | |
 
 - **Calibrated tests were hacked in 3 of 3 seeds, the proof-gated checker in 0 of 3.** Every
-  calibrated policy settled on activation sparsity (`skip_below` 0.005-0.01) within 10
-  steps and kept it to the end; no proof-gated submission ever used it.
+  calibrated policy took up activation sparsity (`skip_below` 0.005-0.01) early and ended
+  with it in every submission. Seeds 1 and 2 held it from steps 6 and 3; seed 0 had it in
+  most submissions from step 9 but dipped (to 69% at step 45) before holding it from
+  step 59. No proof-gated submission ever used it.
 - **The hack paid in every seed:** the calibrated policy's reward is 1-12% above the
   proof-gated one of the same seed (7% on average).
 - **The honest policies don't all find the optimum.** Seed 0's proof-gated policy stopped at
