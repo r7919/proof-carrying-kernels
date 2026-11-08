@@ -40,6 +40,8 @@ def test_accepts_plain_device_code() -> None:
     assert check_slot(TERM, "row") == []
     assert check_slot(TERM + "\n" + USE, "col") == []
     assert check_slot(USE, "col") == []
+    helper = "static __device__ __forceinline__ float sq(float v) { return v * v; }"
+    assert check_slot(f"// a helper\n{helper}\n{TERM}; /* done */", "row") == []
 
 
 @pytest.mark.parametrize(
@@ -54,6 +56,18 @@ def test_accepts_plain_device_code() -> None:
         (TERM + " void f() { cudaMalloc(0, 0); }", "CUDA API"),
         (TERM + " " * 5000, "longer"),
         ("__device__ int helper() { return 1; }", "must define"),
+        # file-scope host code: its initializer runs when the worker loads the library
+        ('int system(const char*); static int pwn = system("id"); ' + TERM, "file scope"),
+        ("int f(); static int pwn = f(); " + TERM, "file scope"),
+        ("__device__ int counter;\n" + TERM, "file scope"),
+        ("struct S { S() {} }; static S s;\n" + TERM, "file scope"),
+        ("template <int N> __device__ float t() { return N; }\n" + TERM, "file scope"),
+        # spellings that get tokens past a regex: %: is #, a backslash splices lines
+        ("%:define CAT(a,b) a%:%:b\n" + TERM, "digraphs"),
+        (TERM + " <% %>", "digraphs"),
+        (TERM + " __glo\\\nbal__ void k() {}", "backslashes"),
+        (TERM + ' const char* s = "x";', "literals"),
+        (TERM + " }", "unbalanced"),
     ],
 )
 def test_rejects_other_code(code: str, reason: str) -> None:

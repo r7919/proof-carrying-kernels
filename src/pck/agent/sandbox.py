@@ -9,8 +9,9 @@ replaces one or both hooks of the template:
                                                                 column j at all (default: true)
 
 Isolation:
-  - ``check_slot`` rejects code that is not plain device code (no preprocessor, inline
-    assembly, kernels, extern or host code) or that is too long.
+  - ``check_slot`` accepts only ``__device__`` function definitions (an allow-list: no
+    file-scope variables, types or templates, no preprocessor in any spelling, no
+    literals, inline assembly, kernels, extern or host code) of bounded length.
   - ``compile_variant`` builds one template instantiation as a shared library with nvcc in
     a subprocess with a timeout; results, errors included, are cached by source hash.
   - ``LiveKernel`` runs the library in a worker process with its own CUDA context, shared
@@ -70,10 +71,54 @@ _FORBIDDEN = (
 _TERM = re.compile(r"\bpck_slot_term\s*\(")
 _USE = re.compile(r"\bpck_slot_use\s*\(")
 
+# The allow-list: after comments are removed, the slot is only __device__ function
+# definitions. Anything else at file scope (a variable, whose initializer runs as host code
+# when the library loads; a struct; a template) is rejected, and so are the spellings that
+# get tokens past a regex: digraphs and trigraphs (%: is #), backslashes (line splices and
+# \u escapes) and string or character literals.
+_COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+_SPELLINGS = re.compile(r"%:|<%|%>|<:|:>|\?\?|\\")
+_LITERAL = re.compile(r"[\"']")
+_QUALIFIERS = r"(?:(?:static|inline|__forceinline__|__noinline__|constexpr)\s+)*"
+_HEADER = re.compile(
+    rf"{_QUALIFIERS}__device__\s+{_QUALIFIERS}(?:const\s+)?(?:(?:unsigned|signed|long)\s+)*"
+    r"\w+[\s*&]+\w+\s*\([^(){};]*\)"
+)
+
+
+def _structure_errors(code: str) -> list[str]:
+    """Reasons the slot is not a sequence of __device__ function definitions."""
+    stripped = _COMMENT.sub(" ", code)
+    errors = []
+    if _SPELLINGS.search(stripped):
+        errors.append("digraphs, trigraphs and backslashes are not allowed")
+    if _LITERAL.search(stripped):
+        errors.append("string and character literals are not allowed")
+    depth, start, headers = 0, 0, []
+    for i, ch in enumerate(stripped):
+        if ch == "{":
+            if depth == 0:
+                headers.append(stripped[start:i])
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth < 0:
+                break
+            if depth == 0:
+                start = i + 1
+    if depth != 0:
+        return [*errors, "unbalanced braces"]
+    rest = stripped[start:].strip().lstrip(";").strip()
+    bad = [h for h in headers if not _HEADER.fullmatch(h.strip().lstrip(";").strip())]
+    if bad or rest:
+        errors.append("only __device__ function definitions are allowed at file scope")
+    return errors
+
 
 def check_slot(code: str, layout: str) -> list[str]:
     """Reasons the slot code is not accepted (empty if it is)."""
     errors = [msg for pattern, msg in _FORBIDDEN if pattern.search(code)]
+    errors += [e for e in _structure_errors(code) if e not in errors]
     if len(code) > MAX_SLOT:
         errors.append(f"slot code is longer than {MAX_SLOT} characters")
     term, use = bool(_TERM.search(code)), bool(_USE.search(code))
