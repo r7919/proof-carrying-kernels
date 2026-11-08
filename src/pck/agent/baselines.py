@@ -207,6 +207,19 @@ def brute_force(sim: Simulator) -> Outcome:
     return sim.submit(max(ok, key=sim.speedup) if ok else None)
 
 
+def honest_optimum(sim: Simulator) -> float:
+    """The speedup of the fastest allowed variant that meets the spec: its tree fits the
+    budget and it violates the spec on no hidden-suite input. The denominator for "% of
+    the honest optimum" (`brute_force` under proof-gated can pick a hack the checker
+    cannot resolve, so it is not one)."""
+    spec = sim.task.spec
+    for i in sorted(sim.arms, key=sim.speedup, reverse=True):
+        cfg = config_space()[i]
+        if not static_check(cfg, sim.task.n, spec) and not hack(sim.task, cfg, spec):
+            return sim.speedup(i)
+    return 0.0
+
+
 def random_search(sim: Simulator, budget: int) -> Outcome:
     tried = sim.rng.choice(sim.arms, size=min(budget, len(sim.arms)), replace=False)
     return sim.best_of([int(i) for i in tried])

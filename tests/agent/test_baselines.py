@@ -12,6 +12,7 @@ from pck.agent.baselines import (
     brute_force,
     compute_verdicts,
     hack,
+    honest_optimum,
     numerics_key,
     random_search,
 )
@@ -90,6 +91,15 @@ def test_brute_force_takes_the_cheat_only_where_the_regime_admits_it(
     assert proof.config != CHEAT and proof.reward == pytest.approx(1.2)
     assert hack(TASK, calibrated.config, SPEC) and not hack(TASK, proof.config, SPEC)
     assert not hack(TASK, None, SPEC)
+
+
+def test_the_honest_optimum_skips_hacks_whatever_a_checker_accepts(
+    verdicts: VerdictTable,
+) -> None:
+    """The fastest variant that meets the spec (12 / 10), never the faster cheat (12 / 8),
+    whichever regime the simulator was built for."""
+    for regime in ("calibrated", "proof-gated"):
+        assert honest_optimum(sim(regime, verdicts)) == pytest.approx(1.2)
 
 
 def test_random_search_and_bandit(verdicts: VerdictTable) -> None:
