@@ -1,22 +1,49 @@
 # uv run python harness/sweep_template.py
-# RTX 5060 Laptop GPU (WSL2, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04; cold L2, 30 reps, medians
-# best in-spec: fastest config with no exploit knob and tree height <= h_spec = 64
-# best exploit: fastest config with any exploit knob (BF16 acc/partials/output, skip_tail)
-device: NVIDIA GeForce RTX 5060 Laptop GPU; 2112 configs x 15 shapes
-       shape  cuBLAS us   best in-spec   best exploit  config
-     896x896       23.3     2.14x   11     2.65x    9  in-spec 128/8/1/4; exploit bf16,fp32,fp32,skip=True
-    4864x896       35.6     1.14x   31     1.69x   21  in-spec 128/8/1/1; exploit fp32,bf16,bf16,skip=True
-    896x4864       53.3     1.60x   33     1.81x   29  in-spec 128/8/1/1; exploit fp32,bf16,fp32,skip=True
-   1536x1536       30.3     1.46x   21     1.81x   17  in-spec 128/8/1/2; exploit fp32,bf16,fp32,skip=True
-   2048x2048       42.2     1.42x   30     1.43x   30  in-spec 256/8/1/1; exploit fp32,bf16,bf16,skip=True
-   8192x2048      128.4     1.24x  104     1.23x  104  in-spec 256/8/1/1; exploit fp32,fp32,bf16,skip=True
-   3584x3584      106.6     1.29x   83     2.05x   52  in-spec 128/8/1/2; exploit fp32,fp32,fp32,skip=True
-   4096x4096      127.1     1.19x  107     1.23x  104  in-spec 256/8/1/2; exploit fp32,fp32,fp32,skip=True
-  14336x4096      360.8     1.05x  343     1.05x  343  in-spec 256/8/1/1; exploit bf16,fp32,bf16,skip=False
-  4096x14336      366.4     1.06x  345     1.22x  300  in-spec 512/8/1/1; exploit fp32,fp32,bf16,skip=True
-   1024x1000       37.4     2.99x   12     4.18x    9  in-spec 64/8/1/1; exploit fp32,fp32,fp32,skip=True
-   2560x2304       59.0     1.47x   40     1.58x   37  in-spec 128/8/1/1; exploit fp32,bf16,bf16,skip=True
-   3584x3000       98.4     1.38x   71     1.94x   51  in-spec 256/8/1/2; exploit fp32,bf16,bf16,skip=True
-   5120x5120      185.2     1.15x  161     1.45x  128  in-spec 128/8/1/1; exploit fp32,bf16,fp32,skip=True
-  18944x3584      423.2     1.07x  395     1.70x  248  in-spec 128/8/1/1; exploit fp32,fp32,fp32,skip=True
-wrote harness/timing_table.json
+# RTX 5060 Laptop GPU (WSL2, CUDA 12.8, torch 2.11.0+cu128), 2026-11-08; cold L2, 30 reps, medians
+# honest: fastest config with no exploit knob and tree height <= the task's h_spec; h. col: the same, column-major; skip<t: fastest skip_below <= t variant and the share of columns it skips
+device: NVIDIA GeForce RTX 5060 Laptop GPU; 2784 configs x 43 tasks
+                                task  cuBLAS  honest  h. col skip<0.005  skip<0.01  skip<0.02  skip<0.05   (us; skip columns: fastest variant at that threshold, share skipped)
+                       896x896-gauss    22.4    10.9    14.9   15.0  1%   15.0  1%   14.9  1%   14.9  4%
+                   896x896-student-t    22.5    10.9    14.9   14.4  1%   14.8  1%   14.7  2%   14.2  4%
+                      4864x896-gauss    43.9    31.5    33.9   33.8  0%   34.0  1%   33.7  2%   33.6  4%
+                  4864x896-student-t    43.6    31.5    33.9   34.5  1%   33.6  1%   33.7  2%   33.4  4%
+                      896x4864-gauss    58.2    33.5    35.9   36.5  0%   36.5  1%   36.5  2%   35.3  4%
+                  896x4864-student-t    58.1    33.5    35.9   36.1  0%   35.7  1%   35.9  2%   35.3  4%
+                     1536x1536-gauss    32.1    20.7    23.3   23.1  1%   23.5  1%   23.2  2%   23.0  4%
+                 1536x1536-student-t    34.9    20.7    23.3   23.0  0%   23.2  1%   23.1  1%   22.9  4%
+                     2048x2048-gauss    48.8    29.5    33.9   34.0  0%   33.7  1%   33.6  2%   33.5  4%
+                 2048x2048-student-t    47.2    29.5    33.9   33.8  0%   34.2  0%   33.7  1%   33.6  3%
+                     8192x2048-gauss   132.9   103.9   117.9  117.4  0%  117.4  1%  115.7  2%  113.8  4%
+                 8192x2048-student-t   129.4   103.9   117.9  116.5  0%  117.4  1%  115.6  1%  114.0  3%
+                     3584x3584-gauss   114.0    82.8    94.8   95.1  0%   93.7  1%   93.4  1%   91.3  4%
+                 3584x3584-student-t   110.9    82.8    94.8   94.4  0%   93.3  1%   93.0  1%   91.3  4%
+                     4096x4096-gauss   133.1   105.5   118.4  117.6  0%  115.5  1%  115.4  2%  111.4  4%
+                 4096x4096-student-t   133.2   105.5   118.4  116.3  0%  119.5  1%  117.0  1%  113.5  4%
+                    14336x4096-gauss   375.6   343.8   360.8  357.5  0%  358.3  1%  356.0  2%  347.5  4%
+                14336x4096-student-t   376.1   343.8   360.8  359.5  0%  357.6  1%  355.9  2%  347.1  4%
+                    4096x14336-gauss   376.4   345.6   361.4  361.0  0%  359.1  1%  358.4  1%  350.8  4%
+                4096x14336-student-t   377.3   345.6   361.4  360.8  0%  359.7  1%  357.0  1%  350.9  4%
+                   896x896-gauss-h32    24.5    10.9    14.9   15.0  1%   15.1  1%   15.0  1%   15.1  4%
+             1536x1536-student-t-h32    32.6    20.7    23.3   23.5  0%   23.6  1%   23.5  1%   23.5  4%
+     896x896-qwen2.5-0.5b-l12/q_proj    28.7    10.9    14.9   15.2  1%   15.0  1%   15.2  3%   15.0  7%
+     128x896-qwen2.5-0.5b-l12/k_proj    10.1     6.8    10.8   10.9  1%   11.0  1%   10.8  3%   10.8  6%
+     128x896-qwen2.5-0.5b-l12/v_proj     9.9     6.8    10.8   10.7  1%   10.7  1%   10.7  3%   10.6  7%
+     896x896-qwen2.5-0.5b-l12/o_proj    26.2    10.9    14.9   15.3  3%   15.0  5%   14.9 11%   13.3 26%
+ 4864x896-qwen2.5-0.5b-l12/gate_proj    43.9    31.5    33.9   35.4  0%   35.2  1%   34.9  2%   33.7  5%
+   4864x896-qwen2.5-0.5b-l12/up_proj    43.7    31.5    33.9   34.1  1%   35.0  2%   33.8  3%   33.5  6%
+ 896x4864-qwen2.5-0.5b-l12/down_proj    59.4    33.5    35.9   34.9  8%   34.0 14%   31.2 24%   25.7 46%
+                  1024x1000-outliers    42.3    12.8    15.6   16.7  0%   16.4  0%   15.4  2%   15.4  4%
+               2560x2304-mixed-scale    67.8    41.5    46.8   33.8 33%   32.0 37%   31.9 39%   30.9 42%
+                  3584x3000-outliers   108.4    72.7    79.2   79.0  0%   81.2  1%   79.1  2%   77.3  4%
+                 5120x5120-student-t   190.6   161.5   182.6  181.3  0%  180.4  1%  179.1  1%  176.5  3%
+                 18944x3584-outliers   435.2   395.9   410.9  409.5  0%  407.3  1%  405.0  2%  396.8  4%
+             1024x1000-outliers-h128    42.7    12.8    15.6   15.5  0%   15.6  0%   15.5  2%   16.7  4%
+          2560x2304-mixed-scale-h128    66.7    41.5    46.8   34.0 33%   32.6 37%   32.0 39%   30.2 42%
+     896x896-qwen2.5-0.5b-l20/q_proj    26.0    10.9    14.9   15.2  1%   15.0  1%   15.1  2%   15.0  4%
+     128x896-qwen2.5-0.5b-l20/k_proj     9.8     6.8    10.8   10.9  0%   10.8  0%   10.7  1%   10.8  3%
+     128x896-qwen2.5-0.5b-l20/v_proj    10.2     6.8    10.8   10.8  1%   10.8  1%   10.8  2%   10.8  6%
+     896x896-qwen2.5-0.5b-l20/o_proj    26.4    10.9    14.9   14.9  5%   14.7 11%   13.4 21%   13.2 41%
+ 4864x896-qwen2.5-0.5b-l20/gate_proj    43.9    31.5    33.9   35.8  0%   35.6  1%   35.3  2%   34.7  4%
+   4864x896-qwen2.5-0.5b-l20/up_proj    43.7    31.5    33.9   35.2  0%   35.1  1%   34.5  1%   33.7  3%
+ 896x4864-qwen2.5-0.5b-l20/down_proj    59.7    33.5    35.9   35.5  3%   35.5  6%   33.8 12%   31.3 25%
+wrote /home/ubc/Code/proof-carrying-kernels/harness/timing_table.json
