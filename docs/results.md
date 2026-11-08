@@ -67,14 +67,14 @@ weights), RTX 5060 Laptop GPU, cold L2, K = 1. Full output: `harness/bench_decod
 
 | Mode | b = 64 | b = 128 |
 |---|---|---|
-| Serial (check after each GEMV) | 8.3% | 5.6% |
-| Overlapped (checks on a side stream) | 9.6% | 9.3% |
-| **Batched (one checker launch per layer)** | **6.1%** | **3.9%** |
+| Serial (check after each GEMV) | 8.5% | 5.7% |
+| Overlapped (checks on a side stream) | 12.1% | 8.8% |
+| **Batched (one checker launch per layer)** | **6.0%** | **3.9%** |
 | Checksum bank size, share of weights | 4.7% | 2.3% |
 
 Zero false alarms in every mode. At b = 128 the batched checker meets the Phase 1 target of
 under 5%. At b = 64 its memory traffic alone is 4.7%, and the single launch adds about
-1.4%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
+1.3%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
 GPU, so the checker has nothing to overlap with and only adds cross-stream latency.
 
 ### False alarms and bit-flip detection on the GPU
@@ -116,12 +116,13 @@ Cost next to the sampler being checked (RTX 5060, V = 151,936, k = 50, p = 0.9; 
 
 | Batch | top-k sampler | top-k checker | top-p selection | top-p checker |
 |---|---|---|---|---|
-| 1 | 354 us | 25 us | 253 us | 65 us |
-| 8 | 366 us | 39 us | 812 us | 153 us |
+| 1 | 418 us | 25 us | 242 us | 67 us |
+| 8 | 361 us | 38 us | 819 us | 165 us |
 
 Computing the top-p terms with FP32 `expf` on a split argument instead of FP64 `exp` cut
 the top-p checker from 91 to 65 us at batch 1 and from 311 to 153 us at batch 8 (FP64 runs
-at 1/64 rate on this GPU), for about 1e-6 more slack.
+at 1/64 rate on this GPU), for about 1e-6 more slack. Dropping masked (`-inf`) logits
+explicitly, so a masked row cannot produce a NaN, costs a few percent (67 and 165 us now).
 
 ### Tightness
 
@@ -534,12 +535,18 @@ decodes 16 concurrent requests x 256 tokens x 3 rounds at top-k 50, top-p 0.9, t
 | Mode | Tokens/s | Cost | Tokens checked | Rejected | Injected | Caught | False alarms |
 |---|---|---|---|---|---|---|---|
 | off | 2,790 | - | - | - | - | - | - |
-| check | 1,935 | 31% | 12,884 | 0 | 0 | 0 | **0** |
-| faults | 2,044 | 27% | 12,900 | 115 | 115 | **115** | **0** |
+| check | 2,173 | 22% | 12,730 | 0 | 0 | 0 | **0** |
+| faults | 1,065 | 62% | 12,758 | 115 | 115 | **115** | **0** |
 
 - **Detection is exact here:** every injected token was caught and no honest token was
   rejected. The closest an accepted token came to the top-p boundary was r - p = -1.1e-4,
   so honest samples sit below p.
+- **Totals are written without waiting for the GPU.** The running counts are copied to
+  pinned host memory without blocking and written one interval later, so the decode loop
+  never synchronizes; that took the cost of the check from 31% to 22%. The fault mode is
+  slower (62%) because it checks each candidate fault before injecting it, so that only
+  tokens outside the allowed set count as faults; that is test scaffolding, not part of
+  the check.
 - **The first version cost 43%** (1,595 tokens/s against 2,811). Taking the hook apart
   showed the arithmetic was not the problem: two places made the CPU wait for the GPU on
   every decode step (reading the batch's largest top-k, and a boolean-mask index for the
