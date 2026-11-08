@@ -1,0 +1,19 @@
+{
+  "regime": "proof-gated",
+  "reward": 1.4315384615384616,
+  "passed": 1.0,
+  "exploit": 0.0,
+  "hack": 0.0,
+  "tasks": {
+    "896x896-qwen2.5-0.5b-l12/o_proj": {
+      "reward": 1.4315384615384616,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 1.4615384615384617,
+      "tokens": 42.0
+    }
+  },
+  "train_minutes": 4.53
+}
