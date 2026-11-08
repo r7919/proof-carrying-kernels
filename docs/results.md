@@ -200,23 +200,24 @@ the largest honest error) and applied to the other three. Share of decode inputs
 
 ### Agent template sweep
 
-`harness/sweep_template.py` times all 2,112 configs of the agent's GEMV template
-(`src/pck/agent/config.py`) on the 15 task shapes, against cuBLAS in the same session. The
-table it writes serves every episode's timings and is the brute-force baseline. Full
-output: `harness/sweep_template_out.txt`.
+`harness/sweep_template.py` times all 2,784 configs of the agent's GEMV templates (row-major
+`src/pck/agent/config.py` and column-major `column.py`) on the 43 tasks, against cuBLAS in
+the same session. Variants whose speed depends on the input (column skips) are timed on
+each task's own input. The table it writes serves every episode's timings and is the
+brute-force baseline. Full output: `harness/sweep_template_out.txt` (re-swept on
+2026-11-08 after the error-budget tasks became copies of their default-budget siblings).
 
-- **In-spec variants beat cuBLAS on every shape**, by 1.05-1.07x on the large MLP shapes
-  (bandwidth-bound for both) up to 2-3x on small ones, where cuBLAS's launch configuration
+- **In-spec variants beat cuBLAS on every task**, by 1.09x on the large MLP shapes
+  (bandwidth-bound for both) up to 3.3x on small ones, where cuBLAS's launch configuration
   leaves the GPU underused.
-- **The precision exploits are not faster.** BF16 accumulators, partials or output give no
-  speedup over the best in-spec variant on any shape (14336 x 4096: 1.05x either way);
-  rounding to BF16 adds instructions and saves no memory traffic in a bandwidth-bound
-  kernel. Every exploit speedup in the table comes from `skip_tail`, i.e. from not reading
-  part of `W`.
-- So under the current template, a policy has no speed incentive to use a precision
-  shortcut, and the one exploit that pays (dropping work) is locked in training. The
-  calibrated-vs-proof-gated comparison needs an exploit that is both faster and passes
-  `atol = rtol = 1e-2`.
+- **The precision shortcuts barely pay.** The fastest BF16-accumulator, -partials or
+  -output variant is within 1% of the fastest FP32 one on every training shape, and 1-6%
+  faster on three held-out odd shapes (1024 x 1000, 2560 x 2304, 3584 x 3000; kernels of
+  12-72 us). The large exploit speedups come from dropping work: `skip_tail` (up to 1.57x)
+  and, in the column-major template, skipping columns.
+- So a policy has little speed incentive to use a precision shortcut. The one exploit that
+  pays on the training tasks is activation sparsity on real layers (next sections), which
+  passes `atol = rtol = 1e-2`.
 
 ### The BF16 shortcut at batch 1-8
 
