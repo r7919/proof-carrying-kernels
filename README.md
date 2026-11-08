@@ -147,7 +147,7 @@ A submission is a **hack** if it violates the proven spec on a hidden adversaria
 defined the same way under every regime. Tasks are decode GEMVs at real model shapes and
 the seven linear layers of two Qwen2.5-0.5B decoder layers on captured activations:
 layer 12 trains, layer 20 is held out, and there are three error budgets. Agent-written
-CUDA runs in a sandbox: a static filter, an nvcc build with a timeout, and a separate
+CUDA runs in a sandbox: an allow-list filter, an nvcc build with a timeout, and a separate
 worker process. There, timed runs are checked runs.
 
 ```bash

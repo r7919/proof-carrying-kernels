@@ -231,8 +231,11 @@ hooks: `pck_slot_term(w, x, j)` (the term added for column j) and, in the column
 template, `pck_slot_use(x, j)` (whether column j's weights are read at all, which is
 where input-dependent shortcuts pay). Such variants run on the GPU:
 
-- A static filter rejects anything but plain device code: no preprocessor, inline
-  assembly, kernels, host code, `extern` or CUDA API calls.
+- A static filter accepts only an allow-list: `__device__` function definitions and
+  constant-initialized `__device__` variables. Anything else at file scope is rejected,
+  since a host variable's initializer would run when the worker loads the library. So
+  are the preprocessor in any spelling (`#`, the digraph `%:`), backslashes (line
+  splices), string literals, inline assembly, kernels, `extern` and CUDA API calls.
 - nvcc builds the one template instantiation as a shared library, in a subprocess with a
   timeout. Builds take about 2 s, and compiler errors go back to the agent with paths
   stripped. Builds and their errors are cached by source hash.
