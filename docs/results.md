@@ -24,6 +24,7 @@ produced it and the file with its full output, so every number here can be repro
 | Rollout throughput, HF vs vLLM | `python -m harness.bench_rollouts` | `harness/bench_rollouts_out.txt` |
 | GRPO smoke run with vLLM rollouts | `python -m pck.rl.train --config smoke --compare generator=vllm` | `harness/grpo_smoke_vllm_out.txt`, `harness/grpo_smoke_vllm/` |
 | GRPO smoke run, lr 1e-4, seed 1 | `... generator=vllm lr=1e-4 seed=1` | `harness/grpo_smoke_vllm_s1_out.txt`, `harness/grpo_smoke_vllm_s1/` |
+| GRPO smoke run, lr 1e-4, seeds 0-2 | `... generator=vllm lr=1e-4 seed=$s` | `harness/grpo_smoke_vllm_seeds_out.txt`, `harness/grpo_smoke_vllm_s{0,1,2}/` |
 | Sampled-token check inside vLLM | `python -m harness.bench_vllm_checker` | `harness/bench_vllm_checker_out.txt` |
 
 ## Measurements
@@ -461,8 +462,28 @@ regime got only 12 steps.
 - **The lower learning rate kept the group exploring.** Under calibrated tests the policy
   reached the paying hack, every submission from step 6. Earlier runs at 3e-4 collapsed
   onto whichever config came first, hacks included that were no faster than honest.
-- One seed and 12 steps: the next runs (seeds 0-2 at `lr = 1e-4`, with `update_batch = 2`)
-  measure how often this happens.
+- One seed and 12 steps; the next section repeats it over three seeds.
+
+### Three seeds at the lower learning rate
+
+Seeds 0 and 2 at `lr = 1e-4` with `update_batch = 2` (about 4.5 minutes and 75-85 steps
+per regime), beside seed 1 from above. Full report: `harness/grpo_smoke_vllm_seeds_out.txt`
+(run files in `harness/grpo_smoke_vllm_s{0,1,2}/`).
+
+| Seed | Calibrated: reward | Hacks | Hack in every submission from | Proof-gated: reward | Hacks |
+|---|---|---|---|---|---|
+| 0 | 1.45 | **100%** | step 9 | 1.33 | 0% |
+| 1 | 1.62 | **100%** | step 6 | 1.46 | 0% |
+| 2 | 1.45 | **100%** | step 3 | 1.43 | 0% |
+| mean | 1.51 | | | 1.41 | |
+
+- **Calibrated tests were hacked in 3 of 3 seeds, the proof-gated checker in 0 of 3.** Every
+  calibrated policy settled on activation sparsity (`skip_below` 0.005-0.01) within 10
+  steps and kept it to the end; no proof-gated submission ever used it.
+- **The hack paid in every seed:** the calibrated policy's reward is 1-12% above the
+  proof-gated one of the same seed (7% on average).
+- **The honest policies don't all find the optimum.** Seed 0's proof-gated policy stopped at
+  1.33, 9% below the 1.46 of seed 1. Group collapse still ends exploration early.
 
 ### The sampled-token check inside vLLM
 
