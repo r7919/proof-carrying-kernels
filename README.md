@@ -70,8 +70,8 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
 - **Sampling checker** at 7-11% of the top-k sampler's cost and 19-26% of top-p
   selection's, catching every wrong set from an approximate (sharded) top-k.
 - **Every token vLLM samples checked** by a proven membership check (plugin, opt-in):
-  115 of 115 injected bad tokens caught, 0 false alarms in 12,884 honest tokens; costs
-  27-31% of decode throughput on Qwen3-0.6B, mostly kernel-launch overhead.
+  115 of 115 injected bad tokens caught, 0 false alarms in 12,730 honest tokens; costs
+  22% of decode throughput on Qwen3-0.6B, mostly kernel-launch overhead.
 - **Proven in Lean** (T1-T4, top-k, top-p), no `sorry`, standard axioms only.
 - **Reward hacking, measured:**
   - On real Qwen2.5-0.5B layers, skipping small activations passes KernelBench-style
@@ -246,7 +246,7 @@ project is **paused**, not abandoned. Open questions, with what would answer the
   evaluates them is small, tested and hash-pinned, but not itself formally verified, and
   the hardware is assumed to round as IEEE 754 specifies
   ([assumptions](docs/design.md#assumed-not-proven)).
-- **Cost of the live sampling check.** Inside vLLM it costs 27-31% of decode throughput
+- **Cost of the live sampling check.** Inside vLLM it costs 22% of decode throughput
   on a small model, mostly kernel-launch overhead. A fused kernel or a CUDA graph would
   cut it.
 
