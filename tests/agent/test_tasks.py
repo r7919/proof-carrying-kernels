@@ -95,3 +95,9 @@ def test_error_budgets_set_the_spec_and_keep_timings() -> None:
     strict = next(t for t in TRAIN if t.h_spec == 32)
     assert strict.spec.h_spec == 32 and strict.key.endswith("-h32")
     assert strict.timing_key == f"{strict.m}x{strict.n}-{strict.dist}"
+    # each budget task is a default-budget task (same weights, inputs and timings) at
+    # another budget, so its timing_key really holds its own timings
+    for task in ALL:
+        if task.h_spec != 64:
+            sibling = [t for t in ALL if t.key == task.timing_key]
+            assert len(sibling) == 1 and sibling[0].seed == task.seed, task.key
