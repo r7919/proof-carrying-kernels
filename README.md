@@ -41,6 +41,9 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
     policy learns activation sparsity in 3 of 3 seeds, paid 7% more on average; under
     the proof-gated checker it never does (0 of 3). Runs at a higher learning rate
     collapse early, keeping or dropping the hack by chance.
+  - When the policy writes CUDA (exploit knobs locked, so cheating must be in code), it
+    never invents the cheat in 15 minutes under either regime: 0% hacks, so this run
+    doesn't separate the checkers yet.
 - **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
   adapter hot-loaded after every GRPO update.
 
