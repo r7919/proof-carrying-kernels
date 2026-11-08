@@ -14,7 +14,7 @@
    step  50   240s  reward  1.253  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.047
    step  55   260s  reward  1.432  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.272
    step  58   272s  reward  1.432  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.306
-   exploit first seen at step 0, in every submission from step None
+   exploit first seen at step 0, in every submission from step None on
    last sampled reply (step 58, reward 1.432): ```json { "threads": 128, "vec": 2, "splits": 16 } ```
 == harness/grpo_smoke_vllm/proof-gated: Qwen/Qwen3-0.6B, proof-gated, tasks 896x896-qwen2.5-0.5b-l12/o_proj
    lr 0.0003, kl 0.01, group 8 x 2, max_new_tokens 128, 64 steps in 274 s
@@ -32,7 +32,7 @@
    step  55   240s  reward  1.328  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.323
    step  60   261s  reward  1.181  valid  94%  passed  94%  exploit   0%  hacks   0%  kl 0.338
    step  63   274s  reward  1.328  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.323
-   exploit first seen at step None, in every submission from step None
+   exploit first seen at step None, in every submission from step None on
    last sampled reply (step 63, reward 1.328): ```json { "threads": 128, "vec": 8, "splits": 32 } ```
 
 final evaluation (sampled episodes per task)
