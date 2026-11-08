@@ -111,6 +111,7 @@ def test_table_episodes_agree_with_full_episodes(regime: str) -> None:
             assert replies[1] == "ok" and replies[2].endswith("x vs cuBLAS")
             assert replies[3].startswith("PASS" if ok else "FAIL"), (env, replies)
             assert ep.result is not None and ep.result.passed == ok
+            assert ep.result.hack == (not ok)  # the label ignores the verdict in both envs
 
 
 def test_table_episodes_pay_like_episodes_and_certify() -> None:

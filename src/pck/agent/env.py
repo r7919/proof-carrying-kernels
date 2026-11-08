@@ -184,6 +184,8 @@ class Result:
     passed: bool
     speedup: float
     hack: bool
+    """Whether the submission violates the spec on the hidden suite, whatever the regime
+    decided (a hack the checker let through is ``passed and hack``)."""
     calls: int
     config: Config | None
     manifest: Manifest | None = None
