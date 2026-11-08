@@ -26,11 +26,16 @@ class FakeSampler:
     def _sample_random(
         self, logits: Any, idx: Any, idx_np: Any, pos: Any, top_k: Any, top_p: Any, *_: Any
     ) -> tuple[Any, Any]:
-        k = top_k if top_k is not None else torch.full((logits.shape[0],), logits.shape[1])
+        dev = logits.device
+        k = (
+            top_k
+            if top_k is not None
+            else torch.full((logits.shape[0],), logits.shape[1], device=dev)
+        )
         kth = logits.topk(int(k.max()), dim=1).values.gather(1, (k - 1).reshape(-1, 1))
         logits.masked_fill_(logits < kth, -float("inf"))  # in place, like vLLM
         greedy = self.sampling_states.temperature.gpu[idx] == 0
-        noise = torch.rand(logits.shape)
+        noise = torch.rand(logits.shape, device=dev)
         drawn = torch.where(torch.isfinite(logits), noise, -1.0).argmax(dim=1)
         return torch.where(greedy, logits.argmax(dim=1), drawn), logits
 
@@ -92,3 +97,55 @@ def test_top_p_rows_and_the_host_top_k_copy(tmp_path: Path) -> None:
 def test_the_plugin_is_off_unless_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PCK_CHECK_SAMPLING", raising=False)
     register()  # must not import vLLM
+
+
+def test_a_short_run_is_flushed_with_its_process_id(tmp_path: Path) -> None:
+    """Fewer steps than PCK_CHECK_EVERY: nothing is written until flush, which writes the
+    totals (at exit, via atexit) with the pid, so no run ends with an empty log."""
+    import os
+
+    cls = type("S", (FakeSampler,), {})
+    log = tmp_path / "check.jsonl"
+    stats = install(cls, log, every=100)
+    for _ in range(3):
+        cls(torch.ones(32))._sample_random(*batch())
+    assert not log.exists()
+    stats.flush()
+    last = lines(log)[-1]
+    assert last["steps"] == 3 and last["rows"] == 96 and last["pid"] == os.getpid()
+    stats.flush()  # idempotent: nothing new to write
+    assert len(lines(log)) == 1
+
+
+def test_faults_count_only_where_the_lowest_token_is_really_outside(tmp_path: Path) -> None:
+    """With top-p within tol of 1 every token is allowed, so replacing a sample with the
+    lowest-logit token is not a fault and must not be counted as one."""
+    cls = type("S", (FakeSampler,), {})
+    log = tmp_path / "check.jsonl"
+    install(cls, log, every=1, fault_rate=1.0)
+    logits, idx, idx_np, pos, _, _, *rest = batch()
+    loose = torch.full((32,), 0.99995)  # p + tol >= 1: no token is outside the nucleus
+    cls(torch.ones(32))._sample_random(logits, idx, idx_np, pos, None, loose, *rest)
+    last = lines(log)[-1]
+    assert last["injected"] == 0 and last["false_alarms"] == 0 and last["rejected"] == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA GPU")
+def test_on_the_gpu_writes_lag_one_interval_and_flush_catches_up(tmp_path: Path) -> None:
+    """On the GPU each interval's totals are copied without waiting and written at the next
+    interval; flush writes the rest."""
+    cls = type("S", (FakeSampler,), {})
+    log = tmp_path / "check.jsonl"
+    stats = install(cls, log, every=2)
+    logits, idx, idx_np, pos, top_k, *rest = (
+        t.cuda() if isinstance(t, torch.Tensor) else t for t in batch()
+    )
+    for _ in range(5):
+        cls(torch.ones(32, device="cuda"))._sample_random(
+            logits.clone(), idx, idx_np, pos, top_k, *rest
+        )
+    torch.cuda.synchronize()
+    stats.flush()
+    steps = [line["steps"] for line in lines(log)]
+    assert steps[-1] == 5 and all(s in (2, 4, 5) for s in steps)
+    assert lines(log)[-1]["rows"] == 160 and lines(log)[-1]["rejected"] == 0
