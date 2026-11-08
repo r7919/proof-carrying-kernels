@@ -489,23 +489,29 @@ per regime), beside seed 1 from above. Full report: `harness/grpo_smoke_vllm_see
 
 `pck.vllm_plugin` checks every token vLLM 0.33 samples against its row of logits and the
 request's top-k / top-p (`pck.member.check_members`, proven in `lean/PCK/TopMember.lean`),
-on the GPU in FP64. `harness/bench_vllm_checker.py` serves Qwen3-0.6B three times (check
-off, check on, check on with 1% of sampled tokens replaced by the row's lowest-logit token)
-and decodes 16 concurrent requests x 256 tokens x 3 rounds at top-k 50, top-p 0.9,
-temperature 0.8. Full output: `harness/bench_vllm_checker_out.txt`.
+on the GPU. `harness/bench_vllm_checker.py` serves Qwen3-0.6B three times (check off,
+check on, check on with 1% of sampled tokens replaced by the row's lowest-logit token) and
+decodes 16 concurrent requests x 256 tokens x 3 rounds at top-k 50, top-p 0.9, temperature
+0.8. Full output: `harness/bench_vllm_checker_out.txt`.
 
 | Mode | Tokens/s | Cost | Tokens checked | Rejected | Injected | Caught | False alarms |
 |---|---|---|---|---|---|---|---|
-| off | 2,811 | - | - | - | - | - | - |
-| check | 1,595 | 43% | 12,877 | 0 | 0 | 0 | **0** |
-| faults | 1,652 | 41% | 12,894 | 115 | 115 | **115** | **0** |
+| off | 2,790 | - | - | - | - | - | - |
+| check | 1,935 | 31% | 12,884 | 0 | 0 | 0 | **0** |
+| faults | 2,044 | 27% | 12,900 | 115 | 115 | **115** | **0** |
 
 - **Detection is exact here:** every injected token was caught and no honest token was
-  rejected. The closest an accepted token came to the top-p boundary was r - p = -9.9e-5,
-  so honest samples sit below p, inside the 1e-4 tolerance.
-- **The check is too slow to leave on.** A decode step for 16 requests goes from 5.7 ms to
-  10.0 ms. The check works in FP64 over the whole 151,936-token vocabulary, and FP64 runs at
-  1/64 rate on this GPU; it also copies the logits once per step. The standalone top-p
-  checker already showed the fix: FP32 `expf` on a split argument cut its cost by half to
-  two thirds (see the sampling checker above). Until then the plugin is an audit mode, not
-  a production setting.
+  rejected. The closest an accepted token came to the top-p boundary was r - p = -1.1e-4,
+  so honest samples sit below p.
+- **The first version cost 43%** (1,595 tokens/s against 2,811). Taking the hook apart
+  showed the arithmetic was not the problem: two places made the CPU wait for the GPU on
+  every decode step (reading the batch's largest top-k, and a boolean-mask index for the
+  boundary statistic). The fix reads top-k from vLLM's host copy and uses `where` in place
+  of the mask. The check also moved from FP64 to FP32 terms summed in FP64 (error bound
+  7.2e-7, `member_eps32`), and when every row has a top-k it computes the softmax over the
+  top k logits only. Alone, the cost of the check fell from 1.8 ms to 0.9 ms per step.
+- **What is left is launch overhead.** The check is about 80 small GPU operations per
+  step: about 0.9 ms of Python dispatch against 0.45 ms of GPU work, beside a 5.7 ms
+  decode step for this small model. A fused kernel or a CUDA graph would remove most of
+  it; on larger models the share is smaller, since the decode step grows and the check
+  doesn't.
