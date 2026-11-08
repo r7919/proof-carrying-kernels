@@ -9,7 +9,8 @@ The checker inspects a sampler's output against the stored FP32 logits:
   mass(S without its smallest logit) < p + tol, with masses from an FP64 softmax. ``tol``
   is the sampler's declared probability error, so a correct sampler that rounds its own
   softmax differently near the boundary is not flagged. The checker adds its own FP64
-  rounding slack, gamma_{V+2}(u64) for a vocabulary of V, since masses are at most 1.
+  rounding slack, `pck.fp.softmax_eps` (which grows with |logit / T|), and rounds the
+  bounds p -/+ slack outward.
 * the sampled token is a member of the selected set.
 
 Not checked: that the token was drawn from the right distribution.
@@ -17,10 +18,12 @@ Not checked: that the token was drawn from the right distribution.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from pck.fp import U64, gamma
+from pck.fp import next_up, softmax_eps
 
 Indices = NDArray[np.int64]
 
@@ -112,8 +115,11 @@ def check_topp(
     sel = np.flatnonzero(mask)
     smallest = sel[np.argmin(a[sel])]
     without_smallest = mass - float(probs[smallest])
-    slack = tol + gamma(a.size + 2, U64)  # the sampler's tolerance plus our own rounding
-    return mass >= p - slack and without_smallest < p + slack
+    finite = np.isfinite(a)
+    zmax = 0.0 if temperature == 1.0 else float(np.abs(a[finite] / temperature).max(initial=0.0))
+    slack = next_up(tol + softmax_eps(a.size, zmax))  # the sampler's tolerance plus ours
+    low, high = math.nextafter(p - slack, -math.inf), next_up(p + slack)
+    return mass >= low and without_smallest < high
 
 
 def check_sampled(token: int, selected: ArrayLike) -> bool:
