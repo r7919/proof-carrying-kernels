@@ -79,7 +79,7 @@ rejects `sorry` and any non-standard axiom).
 | `topP_computed_minimal`, `topP_softmax_computed` | as top-k; checker masses within `eps` of the true softmax masses (assumed) | prefix check, `mass >= p - slack`, `mass - p_min < p + slack` in `check_topp`, `sampling_kernel.cu` |
 | `topP_computed_sound` | the sampler's own masses within `tol`; `slack >= tol + eps` | `slack = tol + eps` in `check_topp` (CPU) and `check_topp_gpu` |
 | `topK_member_iff` | logits are real numbers (no NaN) | `above < k` in `pck.member.check_member` / `check_members` |
-| `topP_member_sound`, `topP_member_detects` | the computed fraction of kept mass above the token within `eps` (`member_eps`, assumed FP64 `exp`); `slack >= tol + eps` | `r < p + tol + eps` in `pck.member`; inside vLLM through `pck.vllm_plugin` |
+| `topP_member_sound`, `topP_member_detects` | the computed fraction of kept mass above the token within `eps` (`member_eps` for the FP64 reference, `member_eps32` on the GPU; assumed `exp` / `expf` accuracy); `slack >= tol + eps` | `r < p + tol + eps` in `pck.member`; inside vLLM through `pck.vllm_plugin` |
 
 ### Assumed, not proven
 
@@ -132,8 +132,16 @@ top-k set). The fraction `r` of the survivors' softmax mass strictly above `t` m
 below `p + tol + eps`: a correct sample always passes (`topP_member_sound`), and a
 rejected one has `r >= p + tol` (`topP_member_detects`).
 
-- `eps` (`member_eps`, 4.6e-11 at a 152k vocabulary) bounds the FP64 computation for any
-  summation order, given FP64 `exp` within 2 ulp.
+- `eps` bounds the computed `r`. For the CPU reference (`member_eps`, 4.6e-11 at a 152k
+  vocabulary) it covers FP64 for any summation order, given FP64 `exp` within 2 ulp. The
+  GPU check (`member_eps32`, 7.2e-7) computes each term in FP32 from an exact split
+  `l - m = hi + lo` (TwoSum) as `expf(hi) (1 + lo)`, so each term is within 6 u32 of exact
+  given FP32 `expf` within 2 ulp, and sums in FP64. FP64 runs at 1/64 rate on consumer
+  GPUs; 7.2e-7 is still far below the sampler's own `tol = 1e-4`.
+- When every row has a top-k, the GPU check computes `r` over the top `max k` logits
+  only, plus the count of tokens tied at the k-th logit beyond them, so the softmax never
+  touches the whole vocabulary. vLLM's host copy of top-k picks these shapes without
+  waiting for the GPU.
 - `tol` is the sampler's own allowance, since FlashInfer computes its pivots in FP32. It
   is a parameter, not proven about FlashInfer.
 
