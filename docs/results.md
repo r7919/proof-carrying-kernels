@@ -24,6 +24,7 @@ produced it and the file with its full output, so every number here can be repro
 | Rollout throughput, HF vs vLLM | `python -m harness.bench_rollouts` | `harness/bench_rollouts_out.txt` |
 | GRPO smoke run with vLLM rollouts | `python -m pck.rl.train --config smoke --compare generator=vllm` | `harness/grpo_smoke_vllm_out.txt`, `harness/grpo_smoke_vllm/` |
 | GRPO smoke run, lr 1e-4, seed 1 | `... generator=vllm lr=1e-4 seed=1` | `harness/grpo_smoke_vllm_s1_out.txt`, `harness/grpo_smoke_vllm_s1/` |
+| Sampled-token check inside vLLM | `python -m harness.bench_vllm_checker` | `harness/bench_vllm_checker_out.txt` |
 
 ## Measurements
 
@@ -462,3 +463,28 @@ regime got only 12 steps.
   onto whichever config came first, hacks included that were no faster than honest.
 - One seed and 12 steps: the next runs (seeds 0-2 at `lr = 1e-4`, with `update_batch = 2`)
   measure how often this happens.
+
+### The sampled-token check inside vLLM
+
+`pck.vllm_plugin` checks every token vLLM 0.33 samples against its row of logits and the
+request's top-k / top-p (`pck.member.check_members`, proven in `lean/PCK/TopMember.lean`),
+on the GPU in FP64. `harness/bench_vllm_checker.py` serves Qwen3-0.6B three times (check
+off, check on, check on with 1% of sampled tokens replaced by the row's lowest-logit token)
+and decodes 16 concurrent requests x 256 tokens x 3 rounds at top-k 50, top-p 0.9,
+temperature 0.8. Full output: `harness/bench_vllm_checker_out.txt`.
+
+| Mode | Tokens/s | Cost | Tokens checked | Rejected | Injected | Caught | False alarms |
+|---|---|---|---|---|---|---|---|
+| off | 2,811 | - | - | - | - | - | - |
+| check | 1,595 | 43% | 12,877 | 0 | 0 | 0 | **0** |
+| faults | 1,652 | 41% | 12,894 | 115 | 115 | **115** | **0** |
+
+- **Detection is exact here:** every injected token was caught and no honest token was
+  rejected. The closest an accepted token came to the top-p boundary was r - p = -9.9e-5,
+  so honest samples sit below p, inside the 1e-4 tolerance.
+- **The check is too slow to leave on.** A decode step for 16 requests goes from 5.7 ms to
+  10.0 ms. The check works in FP64 over the whole 151,936-token vocabulary, and FP64 runs at
+  1/64 rate on this GPU; it also copies the logits once per step. The standalone top-p
+  checker already showed the fix: FP32 `expf` on a split argument cut its cost by half to
+  two thirds (see the sampling checker above). Until then the plugin is an audit mode, not
+  a production setting.
