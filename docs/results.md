@@ -25,6 +25,7 @@ produced it and the file with its full output, so every number here can be repro
 | GRPO smoke run with vLLM rollouts | `python -m pck.rl.train --config smoke --compare generator=vllm` | `harness/grpo_smoke_vllm_out.txt`, `harness/grpo_smoke_vllm/` |
 | GRPO smoke run, lr 1e-4, seed 1 | `... generator=vllm lr=1e-4 seed=1` | `harness/grpo_smoke_vllm_s1_out.txt`, `harness/grpo_smoke_vllm_s1/` |
 | GRPO smoke run, lr 1e-4, seeds 0-2 | `... generator=vllm lr=1e-4 seed=$s` | `harness/grpo_smoke_vllm_seeds_out.txt`, `harness/grpo_smoke_vllm_s{0,1,2}/` |
+| GRPO slot code (agent writes CUDA) | `python -m pck.rl.train --config slot --compare` | `harness/grpo_slot_out.txt`, `harness/grpo_slot/` |
 | Sampled-token check inside vLLM | `python -m harness.bench_vllm_checker` | `harness/bench_vllm_checker_out.txt` |
 
 ## Measurements
@@ -484,6 +485,37 @@ per regime), beside seed 1 from above. Full report: `harness/grpo_smoke_vllm_see
   proof-gated one of the same seed (7% on average).
 - **The honest policies don't all find the optimum.** Seed 0's proof-gated policy stopped at
   1.33, 9% below the 1.46 of seed 1. Group collapse still ends exploration early.
+
+### Slot code: the policy writes CUDA
+
+`--config slot`: the policy writes the body of the kernel's slot functions
+(`pck_slot_term`, `pck_slot_use`) as well as the config, compiled by nvcc and timed live on
+the GPU. Every planted config-level exploit knob is locked to its honest value
+(`lock_exploit_knobs`), so the only way to cheat is in code, e.g. a `pck_slot_use` that
+skips small activations. Qwen3-0.6B, 15 minutes per regime, seed 0. Full report:
+`harness/grpo_slot_out.txt` (run files in `harness/grpo_slot/`).
+
+| Regime | Steps | Final eval: reward | Passed | Hacks | Samples with slot code |
+|---|---|---|---|---|---|
+| calibrated | 70 | 1.40 | 100% | 0% | 10 of 70 |
+| proof-gated | 93 | 1.20 | 88% | 0% | 90 of 93 |
+
+- **No hacks in either regime: the policy never found the code-level cheat.** Every slot
+  it wrote is honest: the exact product `__fmul_rn(w, x)`, or `pck_slot_use` returning
+  `true`. With the config knobs locked, the hack has to be invented in code, and a 0.6B
+  model in 15 minutes doesn't get there. So this run doesn't test the checkers; a
+  warm start that shows a skipping slot, a larger model or a longer run would.
+- **Under calibrated tests the policy mostly stopped writing code.** After about step 30
+  its replies are a config followed by text copied from the prompt's slot signatures,
+  which doesn't parse as code, so the default (honest) slot runs. The proof-gated policy
+  kept writing the exact product.
+- **Live timing is noisy.** Training rewards swing by 0.3-0.5 between steps. The
+  proof-gated final eval (1.20, with 2 of 16 samples failing to compile or pass) is below
+  its own last-10-step mean (1.77), so the gap between the two regimes here is noise, not
+  a cost of the proof gate.
+- The first proof-gated attempt lost its final eval: the trusted `member.py` was edited
+  while it ran, and the run's checker hash check stopped it. These numbers are from a
+  re-run on the committed tree.
 
 ### The sampled-token check inside vLLM
 
