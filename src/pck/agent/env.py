@@ -301,7 +301,12 @@ class Episode:
         passed = evaluate(self.regime, self.kernel, self.cfg, self.task, self.spec, fresh).passed
         speedup = self.timing.speedup(self.cfg, self.task) if live is None else live.speedup()
         reward = (speedup if passed else 0.0) - cost
-        hack = is_hack(self.kernel, self.task, self.spec)
+        if type(self.backend) is EmulatorBackend and self.slot_code is None:  # config only
+            from pck.agent.baselines import hack as cached_hack  # cached per numerics class
+
+            hack = cached_hack(self.task, self.cfg, self.spec)
+        else:
+            hack = is_hack(self.kernel, self.task, self.spec)
         cert = None
         if passed and self.regime == "proof-gated":
             cert = Manifest(
