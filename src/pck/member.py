@@ -18,7 +18,8 @@ survivors, renormalized):
 parameter, not something proven about the sampler. NaN logits or a NaN mass reject.
 
 `check_member` is the CPU reference (NumPy, FP64); `check_members` is the batched torch
-version that runs inside vLLM (`pck.vllm_plugin`), on the GPU, also in FP64.
+version that runs inside vLLM (`pck.vllm_plugin`), on the GPU: exact FP32 comparisons, FP32
+softmax terms on an exact split argument summed in FP64, with ``eps`` from `member_eps32`.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.fp import U64, gamma
+from pck.fp import U32, U64, gamma
 
 
 def member_eps(vocab: int) -> float:
@@ -86,6 +87,38 @@ def check_member(
     return MemberVerdict(bool(r < top_p + slack), above, r)
 
 
+def member_eps32(vocab: int) -> float:
+    """Bound on |computed r - r| for `check_members`: FP32 terms, FP64 sums.
+
+    Each kept term ``e^(l_j - m)`` (l_j, m FP32, l_j <= m) comes from the exact split
+    ``l_j - m = hi + lo`` (TwoSum in FP32, exact without overflow, |lo| <= u32 |hi|) as
+    ``fl(expf(hi) + fl(expf(hi) lo))``; terms with ``hi < -128`` are dropped. With FP32
+    ``expf`` within 2 ulp (4 u32 relative), ``|e^lo - 1 - lo| <= lo^2 <= (128 u32)^2`` and
+    two roundings, each term is within ``6 u32`` relative plus ``2^-124`` absolute (subnormal
+    or flushed results, and dropped terms below ``e^-128``). The sums are FP64 over at most
+    V terms plus one product (the count of tokens tied at the k-th logit times their term),
+    within ``gamma_{V+2}(u64)``. The largest true term is 1, so Z >= 1, and both sums (kept
+    mass Z, mass above A <= Z) are within ``E Z`` with ``E = 6 u32 + V 2^-124 +
+    gamma_{V+2}(u64) (1 + 6 u32 + V 2^-124)``; the quotient is then within
+    ``2E / (1 - E) + u64``, as in `member_eps`."""
+    tiny = math.ldexp(vocab, -124)
+    e = 6 * U32 + tiny + gamma(vocab + 2, U64) * (1 + 6 * U32 + tiny)
+    return 2 * e / (1 - e) + U64
+
+
+def _terms(x: Any, m: Any) -> Any:  # pragma: no cover (torch)
+    """FP32 ``e^(x - m)`` for ``x <= m`` (row maxima ``m``), from the exact split
+    ``x - m = hi + lo`` (Knuth's TwoSum); 0 where ``hi < -128`` or NaN (see `member_eps32`)."""
+    import torch
+
+    nm = -m
+    hi = x + nm
+    bv = hi - x
+    lo = (x - (hi - bv)) + (nm - bv)
+    eh = torch.exp(hi)
+    return torch.where(hi >= -128.0, eh + eh * lo, 0.0)
+
+
 def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is installed)
     logits: Any,
     tokens: Any,
@@ -93,43 +126,73 @@ def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is
     top_p: Any = None,
     greedy: Any = None,
     tol: float = 1e-4,
+    top_k_host: Any = None,
 ) -> dict[str, Any]:
     """`check_member` for a batch on the logits' device (torch): rows (B, V), tokens (B,),
     optional per-row ``top_k`` (B,) ints (V = no top-k), ``top_p`` (B,) floats (1 = none)
     and ``greedy`` (B,) bools. Returns tensors ``ok`` (B,) bool, ``above`` (B,) int and
-    ``mass_above`` (B,) float64, without synchronizing the device."""
+    ``mass_above`` (B,) float64.
+
+    ``top_k_host`` is the same top-k values on the host (NumPy; any array holding the same
+    set of values, e.g. one per request); with it the check never synchronizes the device.
+    Without it they are copied from ``top_k`` (one synchronization).
+
+    Comparisons and top-k are exact in FP32. The top-p fraction uses FP32 terms summed in
+    FP64 (`member_eps32`). When every row has a top-k, it is computed over the top
+    ``max k`` logits only, plus the count of tokens tied at the k-th logit beyond them."""
     import torch
 
-    lv = logits.to(torch.float64)
+    lv = logits.float()  # exact for FP16 / BF16 / FP32
     rows, vocab = lv.shape
+    f64 = torch.float64
     t = tokens.reshape(rows, 1).to(torch.long)
     lt = lv.gather(1, t)
     gt = lv > lt
     above = gt.sum(1)
     finite = ~torch.isnan(lv).any(1)
     k = torch.full((rows,), vocab, dtype=torch.long, device=lv.device)
+    k_lim, all_k = 0, False  # largest top-k below V, and whether every row has one
     if top_k is not None:
         k = top_k.to(torch.long).clamp(1, vocab)
+        host = top_k_host if top_k_host is not None else top_k.cpu().numpy()
+        hk = np.clip(np.asarray(host).astype(np.int64), 1, vocab)
+        lim = hk[hk < vocab]
+        k_lim, all_k = (int(lim.max()), lim.size == hk.size) if lim.size else (0, False)
     if greedy is not None:
-        k = torch.where(greedy.to(torch.bool), torch.ones_like(k), k)
-    ok = finite & (above < k)
-    mass_above = torch.zeros(rows, dtype=torch.float64, device=lv.device)
+        is_greedy = greedy.to(torch.bool)
+        ok_k = torch.where(is_greedy, torch.ones_like(k), k)
+    else:
+        is_greedy = torch.zeros(rows, dtype=torch.bool, device=lv.device)
+        ok_k = k
+    ok = finite & (above < ok_k)
+    mass_above = torch.zeros(rows, dtype=f64, device=lv.device)
     if top_p is not None:
-        p = top_p.to(torch.float64)
-        kept = torch.ones_like(gt)
-        kk = top_k.to(torch.long).clamp(1, vocab) if top_k is not None else None
-        if kk is not None and bool((kk < vocab).any()):
-            kmax = int(kk.max())
-            values = lv.topk(kmax, dim=1).values
-            kth = values.gather(1, (kk - 1).reshape(rows, 1))
-            kept = torch.where((kk < vocab).reshape(rows, 1), lv >= kth, kept)
-        masked = torch.where(kept, lv, torch.full_like(lv, -math.inf))
-        m = masked.max(1, keepdim=True).values
-        e = torch.exp(masked - m)
-        r = (e * gt).sum(1) / e.sum(1)
-        mass_above = torch.where(p < 1.0, r, torch.zeros_like(r))
-        slack = tol + member_eps(vocab)
-        is_greedy = greedy.to(torch.bool) if greedy is not None else torch.zeros_like(ok)
+        p = top_p.to(f64)
+        if all_k:
+            vals = lv.topk(k_lim, dim=1).values  # descending
+            kth = vals.gather(1, (k.clamp(max=k_lim) - 1).reshape(rows, 1))
+            in_k = vals >= kth
+            m = vals[:, :1]
+            e = torch.where(in_k, _terms(vals, m), 0.0)
+            ties = (lv >= kth).sum(1) - in_k.sum(1)  # kept tokens at the k-th logit, not in vals
+            e_kth = e.gather(1, (k - 1).reshape(rows, 1)).reshape(rows)  # vals[k-1] is kth
+            z = e.sum(1, dtype=f64) + ties * e_kth.to(f64)
+            a = torch.where(vals > lt, e, 0.0).sum(1, dtype=f64)
+        else:
+            x = lv
+            if k_lim:
+                kth = lv.topk(k_lim, dim=1).values.gather(
+                    1, (k.clamp(max=k_lim) - 1).reshape(rows, 1)
+                )
+                kept = (k < vocab).reshape(rows, 1).logical_not() | (lv >= kth)
+                x = torch.where(kept, lv, torch.full_like(lv, -math.inf))
+            m = x.max(1, keepdim=True).values
+            e = _terms(x, m)
+            z = e.sum(1, dtype=f64)
+            a = torch.where(gt, e, 0.0).sum(1, dtype=f64)
+        r = a / z
+        mass_above = torch.where(p < 1.0, r, 0.0)
+        slack = tol + member_eps32(vocab)
         topp_ok = (p >= 1.0) | is_greedy | (r < p + slack)
         ok = ok & topp_ok
     return {"ok": ok, "above": above, "mass_above": mass_above}

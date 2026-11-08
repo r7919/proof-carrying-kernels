@@ -10,7 +10,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pck.member import check_member, member_eps
+from pck.member import check_member, member_eps, member_eps32
 
 
 def vllm_kept(logits: np.ndarray, k: int | None, p: float | None) -> set[int]:
@@ -77,6 +77,7 @@ def test_rejects_tokens_outside_top_k_or_the_nucleus() -> None:
 
 def test_the_error_bound_is_tiny_at_llm_vocabularies() -> None:
     assert member_eps(151_936) < 1e-10 and member_eps(2) < 1e-14
+    assert member_eps32(151_936) < 1e-6  # FP32 terms: far below the sampler's 1e-4
 
 
 def test_the_batched_check_matches_the_reference() -> None:
@@ -106,4 +107,58 @@ def test_the_batched_check_matches_the_reference() -> None:
         assert bool(out["ok"][i]) == ref.ok, i
         assert int(out["above"][i]) == ref.above
         if ref.ok and p is not None and not greedy[i]:
-            assert abs(float(out["mass_above"][i]) - ref.mass_above) < 1e-12
+            assert abs(float(out["mass_above"][i]) - ref.mass_above) <= member_eps32(500)
+
+
+@pytest.mark.parametrize("host", [False, True])
+def test_the_top_k_path_counts_ties_beyond_the_largest_k(host: bool) -> None:
+    """Every row has a top-k, so the fraction is computed over the top max-k logits;
+    tokens tied at the k-th logit beyond them must still count toward the kept mass."""
+    torch = pytest.importorskip("torch")
+    from pck.member import check_members
+
+    rng = np.random.default_rng(1)
+    rows, vocab = 48, 400
+    logits = (rng.standard_normal((rows, vocab)) * 4).astype(np.float32)
+    top_k = rng.choice([1, 3, 10, 40], rows)
+    for i in range(0, rows, 2):  # 30 tokens tied at row i's k-th logit
+        order = np.argsort(-logits[i])
+        logits[i, order[top_k[i] - 1 : top_k[i] + 29]] = logits[i, order[top_k[i] - 1]]
+    tokens = np.array(
+        [np.argsort(-row)[rng.integers(0, k)] for row, k in zip(logits, top_k, strict=True)]
+    )
+    tokens[::5] = rng.integers(0, vocab, len(tokens[::5]))  # some far outside
+    top_p = rng.choice([0.2, 0.6, 0.95], rows)
+    out = check_members(
+        torch.tensor(logits),
+        torch.tensor(tokens),
+        torch.tensor(top_k, dtype=torch.int32),
+        torch.tensor(top_p),
+        top_k_host=top_k if host else None,
+    )
+    for i in range(rows):
+        ref = check_member(logits[i], int(tokens[i]), int(top_k[i]), float(top_p[i]))
+        assert bool(out["ok"][i]) == ref.ok, i
+        if ref.ok:
+            assert abs(float(out["mass_above"][i]) - ref.mass_above) <= member_eps32(vocab)
+
+
+def test_fp32_terms_stay_within_the_bound_on_wide_logits() -> None:
+    """Logits spread over hundreds of units (most terms underflow, some sit near the
+    -128 cutoff) still give the fraction within `member_eps32` of the FP64 reference."""
+    torch = pytest.importorskip("torch")
+    from pck.member import check_members
+
+    rng = np.random.default_rng(2)
+    rows, vocab = 16, 5000
+    logits = (rng.uniform(-300, 40, (rows, vocab))).astype(np.float32)
+    logits[:, :50] = rng.uniform(30, 40, (rows, 50)).astype(np.float32)
+    tokens = np.argsort(-logits, axis=1)[:, 7]
+    out = check_members(
+        torch.tensor(logits),
+        torch.tensor(tokens),
+        top_p=torch.full((rows,), 0.99, dtype=torch.float64),
+    )
+    for i in range(rows):
+        ref = check_member(logits[i], int(tokens[i]), top_p=0.99)
+        assert abs(float(out["mass_above"][i]) - ref.mass_above) <= member_eps32(vocab)
