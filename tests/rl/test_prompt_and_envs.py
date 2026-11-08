@@ -39,6 +39,10 @@ def test_parses_the_last_json_object_outside_thinking() -> None:
 def test_presets_load_and_overrides_are_typed() -> None:
     smoke = load("smoke", ["steps=3", "regime=proof-gated", "time_limit_min=none"])
     assert smoke.steps == 3 and smoke.regime == "proof-gated" and smoke.time_limit_min is None
+    url = load("smoke", ["vllm_url=http://127.0.0.1:8000", "lr=1e-4", "tasks=896x896-gauss,"])
+    assert url.vllm_url == "http://127.0.0.1:8000" and url.lr == 1e-4
+    assert url.tasks == ("896x896-gauss",)
+    assert load("smoke", ["vllm_url=none", "time_limit_min=2.5"]).time_limit_min == 2.5
     assert load("slot").lock_exploit_knobs
     pilot = load("pilot")
     assert pilot.turns > 1 and pilot.env == "table" and pilot.test_tasks()

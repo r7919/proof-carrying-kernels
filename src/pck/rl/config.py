@@ -10,7 +10,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 from pck.agent.regimes import REGIMES, RegimeName
 from pck.agent.task import Task
@@ -133,17 +133,23 @@ def task_by_key(key: str) -> Task:
 
 
 def _coerce(name: str, value: str) -> Any:
-    """A command-line override's value, typed like the field's default."""
-    default = getattr(RunConfig(), name)
-    if isinstance(default, bool):
+    """A command-line override's value, typed by the field's annotation (``X | None``
+    fields also take ``none`` or ``null``)."""
+    hint: Any = get_type_hints(RunConfig)[name]
+    args = get_args(hint)
+    if type(None) in args:
+        if value.lower() in ("none", "null"):
+            return None
+        hint = next(a for a in args if a is not type(None))
+    if hint is bool:
         return value.lower() in ("1", "true", "yes")
-    if isinstance(default, tuple):
+    if get_origin(hint) is tuple:
         return tuple(v for v in value.split(",") if v)
-    if isinstance(default, int):
+    if hint is int:
         return int(value)
-    if isinstance(default, float) or default is None:
-        return None if value.lower() == "none" else float(value)
-    return value
+    if hint is float:
+        return float(value)
+    return value  # str and Literal fields
 
 
 def load(preset: str | Path, overrides: list[str] | None = None) -> RunConfig:
