@@ -19,7 +19,15 @@ from pathlib import Path
 
 import numpy as np
 
-from pck.agent.baselines import Bandit, Simulator, VerdictTable, brute_force, hack, random_search
+from pck.agent.baselines import (
+    Bandit,
+    Simulator,
+    VerdictTable,
+    brute_force,
+    hack,
+    honest_optimum,
+    random_search,
+)
 from pck.agent.env import TimingTable
 from pck.agent.regimes import REGIMES, RegimeName
 from pck.agent.task import Task
@@ -41,9 +49,9 @@ def main() -> None:
     def make(task: Task, regime: RegimeName) -> Simulator:
         return Simulator(task, regime, verdicts, timing, locks(task), rng)
 
-    # The honest optimum per task: brute force under the proof-gated checker, which only
-    # accepts in-spec variants.
-    optimum = {t.key: brute_force(make(t, "proof-gated")).speedup for t in TRAIN + HELD_OUT}
+    # The honest optimum per task: the fastest variant that meets the spec (not brute force
+    # under proof-gated, which can pick a hack below the checker's resolution).
+    optimum = {t.key: honest_optimum(make(t, "proof-gated")) for t in TRAIN + HELD_OUT}
     print(
         f"budget {BUDGET}, {args.seeds} seeds;"
         " reward and certified speedup as % of the honest optimum"
