@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 260" width="800" height="260" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 232" width="800" height="232" role="img" aria-labelledby="t d">
   <title id="t">The experiment: an AI writes kernels and is paid by a checker</title>
-  <desc id="d">A loop: the AI agent writes a CUDA kernel, the GPU runs and times it, the checker judges it, and the reward (the speedup if correct, zero if caught) trains the agent with GRPO. Swapping the checker changes what the agent learns: under a guessed tolerance it learned to cheat in 3 of 3 seeds, under the proven bound in 0 of 3.</desc>
+  <desc id="d">A loop: the AI agent writes a CUDA kernel, the GPU runs and times it, the checker judges it, and the reward (the speedup if correct, zero if caught) trains the agent with GRPO. The experiment swaps the checker, a guessed tolerance or the proven bound, and compares what the agent learns.</desc>
   <style>
     :root { --ink: #1f2328; --muted: #59636e; --box: #f6f8fa; --edge: #d1d9e0; --proof: #1f6feb;
             --proof-fill: #ddeaff; --pulse: #1f6feb; --ok: #1a7f37; --bad: #cf222e; }
@@ -17,8 +17,6 @@
     .pulse { fill: var(--pulse); }
     .arrow { fill: var(--edge); }
     .note { font-size: 13.5px; }
-    .bad { fill: var(--bad); font-weight: 700; }
-    .ok { fill: var(--ok); font-weight: 700; }
     @media (prefers-reduced-motion: reduce) { .pulse { display: none; } }
   </style>
 
@@ -51,6 +49,5 @@
 
   <text x="405" y="162" text-anchor="middle" class="sub">the agent learns from the reward (GRPO)</text>
 
-  <text x="20" y="214" class="note">Swap the checker and compare what the agent learns:</text>
-  <text x="20" y="238" class="note">guessed tolerance → <tspan class="bad">learned to cheat in 3 of 3 runs</tspan>;   proven bound → <tspan class="ok">0 of 3</tspan></text>
+  <text x="20" y="214" class="note">The experiment: swap the checker (guessed tolerance or proven bound) and compare what the agent learns.</text>
 </svg>

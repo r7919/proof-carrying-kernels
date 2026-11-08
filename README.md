@@ -34,7 +34,7 @@ The same checkers also catch silent hardware faults such as bit flips. The motto
 checker, not the kernel*. The kernel can be hand-written, AI-written, buggy or
 adversarial, and only the small checker has to be trusted.
 
-<p align="center"><img src="docs/img/loop.svg" width="760" alt="The experiment loop: an AI agent writes a CUDA kernel, the GPU runs it, the checker judges it, and the reward trains the agent. Under a guessed tolerance the agent learned to cheat in 3 of 3 runs, under the proven bound in 0 of 3."></p>
+<p align="center"><img src="docs/img/loop.svg" width="760" alt="The experiment loop: an AI agent writes a CUDA kernel, the GPU runs it, the checker judges it, and the reward trains the agent. The experiment swaps the checker and compares what the agent learns."></p>
 
 ## Key results
 
