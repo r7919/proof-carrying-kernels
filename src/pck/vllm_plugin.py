@@ -5,9 +5,9 @@ vLLM loads entry points of the ``vllm.general_plugins`` group in every process; 
 vLLM's V2 model runner (``vllm.v1.worker.gpu.sample.sampler.Sampler._sample_random``,
 vLLM 0.33): after each sampling step it checks every sampled token against its row of
 logits and the request's top-k / top-p / greedy setting (`pck.member.check_members`,
-proven in lean/PCK/TopMember.lean), on the GPU, accumulating counts on the device so the
-decode loop never synchronizes. Every ``PCK_CHECK_EVERY`` steps it appends a JSON line
-of running totals to ``PCK_CHECK_LOG``.
+proven in lean/PCK/TopMember.lean), on the GPU, accumulating counts on the device and
+reading top-k from vLLM's host copy, so the decode loop never synchronizes. Every
+``PCK_CHECK_EVERY`` steps it appends a JSON line of running totals to ``PCK_CHECK_LOG``.
 
 Environment:
   PCK_CHECK_SAMPLING=1   enable the check
@@ -57,7 +57,7 @@ class CheckStats:
                 (rejected & ~injected).sum(),
             ]
         )
-        step_excess = excess.max() if excess.numel() else excess.new_tensor(-1.0)
+        step_excess = excess.max()
         if self.totals is None:
             self.totals, self.max_excess = counts, step_excess
         else:
@@ -128,13 +128,17 @@ def install(
             injected = draw & constrained
             worst = logits.argmin(dim=1).to(sampled.dtype)
             sampled = torch.where(injected, worst, sampled.reshape(rows)).reshape(sampled.shape)
-        verdict = check_members(logits, sampled.reshape(rows), top_k, top_p, greedy, tol)
-        # how close accepted top-p samples come to the boundary: max of r - p
+        host = getattr(self.sampling_states, "top_k", None)  # vLLM's host copy: no sync
+        top_k_host = host.np[idx_mapping_np] if host is not None and top_k is not None else None
+        verdict = check_members(
+            logits, sampled.reshape(rows), top_k, top_p, greedy, tol, top_k_host
+        )
+        # how close accepted top-p samples come to the boundary: max of r - p, -1 where
+        # there is none (r - p >= -1); a where, not a mask, since a mask synchronizes
+        excess = torch.full((rows,), -1.0, dtype=torch.float64, device=logits.device)
         if top_p is not None:
             in_nucleus = verdict["ok"] & (top_p < 1.0) & ~greedy
-            excess = (verdict["mass_above"] - top_p.to(torch.float64))[in_nucleus]
-        else:
-            excess = logits.new_zeros(0, dtype=torch.float64)
+            excess = torch.where(in_nucleus, verdict["mass_above"] - top_p.double(), excess)
         stats.add(verdict["ok"], injected, excess)
         return sampled, out
 
