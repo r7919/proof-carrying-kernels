@@ -70,6 +70,25 @@ def test_injected_faults_are_all_caught_and_nothing_else(tmp_path: Path) -> None
     assert last["false_alarms"] == 0 and last["rejected"] == last["injected"]
 
 
+def test_top_p_rows_and_the_host_top_k_copy(tmp_path: Path) -> None:
+    """With vLLM's host copy of top-k (no synchronization) and top-p on every row: honest
+    samples pass, faults are caught, and the logged boundary distance is below 0."""
+    temperature = torch.ones(32)
+    cls = type("S", (FakeSampler,), {})
+    log = tmp_path / "check.jsonl"
+    install(cls, log, every=1, fault_rate=0.3)
+    logits, idx, idx_np, pos, top_k, _, *rest = batch()
+    # loose enough that every token in the top k passes; none on rows without a top-k
+    top_p = torch.where(top_k < logits.shape[1], 0.999, 1.0)
+    sampler = cls(temperature)
+    sampler.sampling_states.top_k = SimpleNamespace(np=top_k.numpy())
+    for _ in range(4):
+        sampler._sample_random(logits.clone(), idx, idx_np, pos, top_k, top_p, *rest)
+    last = lines(log)[-1]
+    assert last["injected"] > 0 and last["caught"] == last["injected"]
+    assert last["false_alarms"] == 0 and -1 <= last["max_excess"] < 0
+
+
 def test_the_plugin_is_off_unless_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PCK_CHECK_SAMPLING", raising=False)
     register()  # must not import vLLM
