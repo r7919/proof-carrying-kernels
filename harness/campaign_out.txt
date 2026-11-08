@@ -1,11 +1,11 @@
 # uv run python harness/campaign.py
-# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04
+# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-08
 device: NVIDIA GeForce RTX 5060 Laptop GPU; torch 2.11.0+cu128; seed 0
 
 == false alarms: b = 128, K = 8; 2688 block checks per kernel per trial
     kernel   block checks  alarms  max |rho|/tau   by distribution (max |rho|/tau)
- coalesced     10,002,048       0       3.77e-03   gauss 5.75e-04, student-t 3.38e-03, mixed-scale 2.48e-03, outliers 3.77e-03   (12 s)
-     naive     10,002,048       0       3.82e-03   gauss 7.15e-04, student-t 2.40e-03, mixed-scale 2.98e-03, outliers 3.82e-03   (13 s)
+ coalesced     10,002,048       0       3.77e-03   gauss 5.75e-04, student-t 3.38e-03, mixed-scale 2.48e-03, outliers 3.77e-03   (13 s)
+     naive     10,002,048       0       3.82e-03   gauss 7.15e-04, student-t 2.40e-03, mixed-scale 2.98e-03, outliers 3.82e-03   (14 s)
 
 == false alarms: b = 64, K = 8; 5376 block checks per kernel per trial
     kernel   block checks  alarms  max |rho|/tau   by distribution (max |rho|/tau)
