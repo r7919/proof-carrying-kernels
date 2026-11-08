@@ -9,9 +9,10 @@ replaces one or both hooks of the template:
                                                                 column j at all (default: true)
 
 Isolation:
-  - ``check_slot`` accepts only ``__device__`` function definitions (an allow-list: no
-    file-scope variables, types or templates, no preprocessor in any spelling, no
-    literals, inline assembly, kernels, extern or host code) of bounded length.
+  - ``check_slot`` accepts only ``__device__`` function definitions and constant-
+    initialized ``__device__`` variables (an allow-list: no host variables, types or
+    templates, no preprocessor in any spelling, no literals, inline assembly, kernels,
+    extern or host code) of bounded length.
   - ``compile_variant`` builds one template instantiation as a shared library with nvcc in
     a subprocess with a timeout; results, errors included, are cached by source hash.
   - ``LiveKernel`` runs the library in a worker process with its own CUDA context, shared
@@ -73,14 +74,20 @@ _TERM = re.compile(r"\bpck_slot_term\s*\(")
 _USE = re.compile(r"\bpck_slot_use\s*\(")
 
 # The allow-list: after comments are removed, the slot is only __device__ function
-# definitions. Anything else at file scope (a variable, whose initializer runs as host code
-# when the library loads; a struct; a template) is rejected, and so are the spellings that
-# get tokens past a regex: digraphs and trigraphs (%: is #), backslashes (line splices and
-# \u escapes) and string or character literals.
+# definitions and __device__ variables with constant initializers (CUDA forbids dynamic
+# initialization of device variables, so neither runs host code). Anything else at file
+# scope (a host variable, whose initializer runs when the library loads; a struct; a
+# template) is rejected, and so are the spellings that get tokens past a regex: digraphs
+# and trigraphs (%: is #), backslashes (line splices and \u escapes) and string or
+# character literals.
 _COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 _SPELLINGS = re.compile(r"%:|<%|%>|<:|:>|\?\?|\\")
 _LITERAL = re.compile(r"[\"']")
 _QUALIFIERS = r"(?:(?:static|inline|__forceinline__|__noinline__|constexpr)\s+)*"
+_DEVICE_VAR = re.compile(
+    rf"{_QUALIFIERS}__device__\s+{_QUALIFIERS}(?:(?:volatile|const|unsigned|signed|long)\s+)*"
+    r"\w+\s+\w+(?:\s*\[\s*\d+\s*\])?(?:\s*=\s*[-+]?[\w.]+)?"
+)
 _HEADER = re.compile(
     rf"{_QUALIFIERS}__device__\s+{_QUALIFIERS}(?:const\s+)?(?:(?:unsigned|signed|long)\s+)*"
     r"\w+[\s*&]+\w+\s*\([^(){};]*\)"
@@ -109,10 +116,15 @@ def _structure_errors(code: str) -> list[str]:
                 start = i + 1
     if depth != 0:
         return [*errors, "unbalanced braces"]
-    rest = stripped[start:].strip().lstrip(";").strip()
-    bad = [h for h in headers if not _HEADER.fullmatch(h.strip().lstrip(";").strip())]
-    if bad or rest:
-        errors.append("only __device__ function definitions are allowed at file scope")
+    # between definitions: device variables (each ending in ;), then the next header
+    pieces = [p for h in headers for p in h.split(";")[:-1]] + stripped[start:].split(";")
+    bad_vars = [p for p in pieces if p.strip() and not _DEVICE_VAR.fullmatch(p.strip())]
+    bad = [h for h in headers if not _HEADER.fullmatch(h.split(";")[-1].strip())]
+    if bad or bad_vars:
+        errors.append(
+            "only __device__ functions and constant-initialized __device__ variables are"
+            " allowed at file scope"
+        )
     return errors
 
 

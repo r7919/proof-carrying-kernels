@@ -42,6 +42,8 @@ def test_accepts_plain_device_code() -> None:
     assert check_slot(USE, "col") == []
     helper = "static __device__ __forceinline__ float sq(float v) { return v * v; }"
     assert check_slot(f"// a helper\n{helper}\n{TERM}; /* done */", "row") == []
+    state = "__device__ volatile unsigned n = 0;\nstatic __device__ float t[4];\n"
+    assert check_slot(state + TERM, "row") == []  # device variables run no host code
 
 
 @pytest.mark.parametrize(
@@ -59,7 +61,8 @@ def test_accepts_plain_device_code() -> None:
         # file-scope host code: its initializer runs when the worker loads the library
         ('int system(const char*); static int pwn = system("id"); ' + TERM, "file scope"),
         ("int f(); static int pwn = f(); " + TERM, "file scope"),
-        ("__device__ int counter;\n" + TERM, "file scope"),
+        ("int counter;\n" + TERM, "file scope"),
+        ("__device__ int counter = f();\n" + TERM, "file scope"),
         ("struct S { S() {} }; static S s;\n" + TERM, "file scope"),
         ("template <int N> __device__ float t() { return N; }\n" + TERM, "file scope"),
         # spellings that get tokens past a regex: %: is #, a backslash splices lines
