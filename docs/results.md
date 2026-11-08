@@ -251,10 +251,10 @@ minima are noisier).
 
 | Layer | Threshold | Skipped | Calibrated accepts | Proof-gated accepts | vs honest column-major | vs honest row-major |
 |---|---|---|---|---|---|---|
-| l12 down_proj | 0.005 | 8% | 100% | 0% | 1.06x | 1.00x |
-| l20 down_proj | 0.01 | 6% | 100% | 0% | 1.05x | 0.99x |
-| l12 o_proj | 0.01 | 5% | 100% | 0% | 1.10x | 0.83x |
-| l20 o_proj | 0.01 | 11% | 100% | 0% | 1.03x | 0.83x |
+| l12 down_proj | 0.005 | 8% | 100% | 0% | 1.06x | 0.99x |
+| l20 down_proj | 0.01 | 6% | 100% | 0% | 1.02x | 0.96x |
+| l12 o_proj | 0.01 | 5% | 100% | 0% | 1.10x | 0.81x |
+| l20 o_proj | 0.01 | 11% | 100% | 0% | 1.12x | 0.82x |
 
 - **Accuracy: the window exists.** On every real layer some threshold skips 3-16% of the
   columns, passes the calibrated test on at least 95% of inputs and fails the proof-gated
@@ -262,13 +262,24 @@ minima are noisier).
 - **Speed: it pays in a column-major deployment.** After optimizing the column kernel
   (contiguous column ranges per split, one launch), honest column-major is within 6-8% of
   row-major on the large layers (25-33% behind on the small 896 x 896 ones). Against the
-  best honest column-major kernel the accepted cheat is 3-10% faster; against honest
-  row-major it at best breaks even.
+  best honest column-major kernel the accepted cheat is 2-12% faster; against honest
+  row-major it at best breaks even. Re-run on 2026-11-08, these medians match the first
+  run's to within 0.5 us.
 - cuBLAS on the transposed weights is much slower (80 vs 53 us on `down_proj`); the
   column-major template beats cuBLAS in either layout.
 - Real tasks are therefore set in a column-major deployment, as sparsity-aware inference
   engines (TEAL, Deja Vu) store weights (`pck.agent.tasks.locks`). The incentive is
   small; whether RL finds it is Phase 5's go/no-go question.
+- **The timing table does not always show it.** The episodes' rewards come from the
+  template sweep's timing table, where input-dependent variants (the skips) are timed in
+  a separate pass from the honest kernels, so clock drift between the passes lands
+  between them. In the first sweep (2026-11-04) the accepted cheats were up to 16% faster
+  than honest column-major there; in the re-sweep (2026-11-08) the skip kernels on real
+  inputs came out 3-10% slower than in this benchmark, and the best accepted cheat is at
+  most 3% faster (`harness/exploit_window_out.txt`). So the cheat pays in the RL runs
+  trained on the first table (the smoke runs below) and barely in those trained on the
+  second (the control and the pilot). Timing the skips interleaved with the honest
+  kernels, as this benchmark does, would make the table agree with it.
 
 ### Phase 4 gates: a scripted cheater and episode cost
 
