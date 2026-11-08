@@ -330,7 +330,7 @@ signal, not about LLMs.
   about 10 us on this GPU under WSL2, which dominated small GEMVs. Batching up to 8 GEMVs
   per launch brought a Llama-3-8B decode layer to 3.9% overhead at b = 128.
 - **Side streams do not help.** Overlapping checks with the next GEMV was slower than serial
-  (9.3-9.6% vs 5.6-8.3%): the GEMV saturates the GPU, so there is nothing to overlap with.
+  (8.8-12.1% vs 5.7-8.5%): the GEMV saturates the GPU, so there is nothing to overlap with.
 - **Segmented reductions.** Both checkers split long rows across segments with a last-block
   merge (atomic ticket, fixed merge order), so a single row uses every SM.
 - **The probabilistic tier is not needed.** At tree height 23 the Higham-Mary bound is
