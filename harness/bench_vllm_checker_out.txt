@@ -1,0 +1,5 @@
+Qwen/Qwen3-0.6B: 16 concurrent requests x 256 tokens x 3 rounds; top-k 50, top-p 0.9, temperature 0.8
+   mode  tokens/s   cost  checked rejected injected  caught false alarms   max r-p
+    off      2811   0.0%        0        0        0       0            0       nan
+  check      1595  43.2%    12877        0        0       0            0 -9.91e-05
+ faults      1652  41.2%    12894      115      115     115            0 -3.48e-04
