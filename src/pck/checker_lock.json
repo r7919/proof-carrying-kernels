@@ -1,5 +1,5 @@
 {
-  "checker": "21eb5d5277ef24db155cc4366019cde3a32efe58f9789094ddd95ab38a5f9f96",
+  "checker": "b2336a47376df6e781143587b9cbeea50cb9962c5a17462895944e289e406ddb",
   "files": {
     "fp.py": "31dd661e6d67f7f137518d051f8092914688af7877bb68b3ff78b443721d0804",
     "checker.py": "9a1b099a627df0e98cdb61be166600f33d71da1f3e5c0104146da370cfc72ea8",
@@ -9,6 +9,9 @@
     "cuda/sampling.py": "961976aed1c950166990439bdfebf87089adbddf6c17bff0488c8e4bba96ffa9",
     "cuda/csrc/checker.h": "19458eb1ebb55b0ba4b33baaedf493c35e283d36d2bd20fbfbae93d6c050b23a",
     "cuda/csrc/checker_kernel.cu": "a61f0c9f28757fc52608a4f9783443e2d98546ace83040dd9eaf0ad137c19538",
-    "cuda/csrc/sampling_kernel.cu": "2c05aa3d840f2345053406ded7c3369ed2c4da83c399980ae5ec7ab18a486752"
+    "cuda/csrc/sampling_kernel.cu": "2c05aa3d840f2345053406ded7c3369ed2c4da83c399980ae5ec7ab18a486752",
+    "cuda/csrc/bindings.cpp": "8f981dc4f44bdf01c35cc7f444b9472c4040a99876ea49c6b43353b34f2cee23",
+    "cuda/_ext.py": "9cdea3abdd5240a5cbd7da65a0576e054d638ba5cb760835e4927e6e200a3cb0",
+    "vllm_plugin.py": "3cd1c15737f3e11885b392fa54ad3af1b0f58be9228d01e08ae694ad57d77b34"
   }
 }

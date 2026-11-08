@@ -33,6 +33,9 @@ TRUSTED = (
     "cuda/csrc/checker.h",
     "cuda/csrc/checker_kernel.cu",
     "cuda/csrc/sampling_kernel.cu",
+    "cuda/csrc/bindings.cpp",  # shape checks, seg_len (the chain length the bound assumes)
+    "cuda/_ext.py",  # compile flags (--fmad=false)
+    "vllm_plugin.py",  # builds every input to the in-vLLM membership verdicts
 )
 THEOREMS = {
     "T1 no false alarms": "PCK.t1_block",
