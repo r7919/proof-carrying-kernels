@@ -97,6 +97,26 @@ def test_compiler_errors_reach_the_agent(cache: Path) -> None:
     assert compile_variant(KernelConfig(), bad) == (None, message)  # cached too
 
 
+@needs_nvcc
+def test_a_killed_compile_is_not_cached(cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An OOM-killed nvcc (returncode -9) must not fail the variant forever."""
+    import subprocess
+
+    real = subprocess.run
+
+    def killed(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if "variant.cu" in cmd:
+            return subprocess.CompletedProcess(cmd, -9, "", "")
+        return real(cmd, **kwargs)  # type: ignore[call-overload,no-any-return]
+
+    monkeypatch.setattr(subprocess, "run", killed)
+    lib, message = compile_variant(KernelConfig(), TERM)
+    assert lib is None and message.startswith("compile failed")
+    monkeypatch.setattr(subprocess, "run", real)
+    lib, message = compile_variant(KernelConfig(), TERM)
+    assert message == "ok" and lib is not None  # retried, not read from a cached failure
+
+
 def test_rejected_slots_do_not_compile() -> None:
     lib, message = compile_variant(KernelConfig(), "#define X\n" + TERM)
     assert lib is None and message.startswith("slot rejected")
