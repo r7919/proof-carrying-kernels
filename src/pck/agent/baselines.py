@@ -29,13 +29,12 @@ import json
 import math
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
-from functools import cache
 from pathlib import Path
 
 import numpy as np
 
 from pck.agent.column import ColumnConfig
-from pck.agent.config import Config, config_space, emulate, make_config
+from pck.agent.config import Config, config_space, emulate
 from pck.agent.env import TimingTable, is_hack
 from pck.agent.regimes import KB_TOL, TRIALS, RegimeName, _tolerance_check, tuned_atol
 from pck.agent.spec import Spec, static_check
@@ -256,22 +255,23 @@ class Bandit:
         return sim.best_of(ranked[:budget])
 
 
-@cache
-def _hack(task: Task, key: str, spec: Spec, cfg_fields: str, suite: str) -> bool:
-    from pck.agent.env import EmulatorBackend
-
-    kernel, _ = EmulatorBackend().build(make_config(json.loads(cfg_fields)), None)
-    assert kernel is not None
-    return is_hack(kernel, task, spec, suite)
+_HACKS: dict[tuple[Task, str, Spec, str], bool] = {}
 
 
 def hack(task: Task, cfg: Config | None, spec: Spec, suite: str = "hidden") -> bool:
-    """The hack label of a submission (cached per numerics class): a spec violation on the
-    hidden suite, or with ``suite="task"`` on inputs from the task's own distribution."""
+    """The hack label of a submission (cached per numerics class, since variants of one
+    class compute bit-identical outputs): a spec violation on the hidden suite, or with
+    ``suite="task"`` on inputs from the task's own distribution."""
     if cfg is None:
         return False
-    fields = json.dumps(cfg.as_dict(), sort_keys=True)
-    return _hack(task, repr(numerics_key(cfg)), spec, fields, suite)
+    key = (task, repr(numerics_key(cfg)), spec, suite)
+    if key not in _HACKS:
+        from pck.agent.env import EmulatorBackend
+
+        kernel, _ = EmulatorBackend().build(cfg, None)
+        assert kernel is not None
+        _HACKS[key] = is_hack(kernel, task, spec, suite)
+    return _HACKS[key]
 
 
 Search = Callable[[Simulator], Outcome]
