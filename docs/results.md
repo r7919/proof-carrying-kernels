@@ -419,6 +419,14 @@ the tables), then 32 sampled evaluation episodes. Full report:
   single-task run.
 - This is a pilot of one seed on one task. The plan's comparison needs at least 3 seeds,
   more tasks (the pilot preset), and held-out evaluation.
+- **Tables.** This run and the other smoke runs below were trained on the first sweep's
+  timing table and the first verdict table, and were not re-run after the review fixes.
+  The re-sweep moves the cheat's payoff on this task (see the exploit window), and the
+  recomputed verdict table differs on this task in one place: the calibrated test now
+  accepts `skip_below = 0.02` on 3 of 4 inputs instead of 2 (the first table's rows for
+  the real layers do not match what the committed code computes, at any commit, so they
+  were stale). No proof-gated verdict on this task changed, so the proof-gated runs would
+  see identical rewards apart from the timings.
 
 ### Rollouts with vLLM: 7.8x faster
 
