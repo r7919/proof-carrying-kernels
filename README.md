@@ -37,11 +37,10 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
     proof-gated checker reaches 95% with no hacks for the bandit.
   - A policy-gradient control learns the hack under calibrated tests (2 of 3 seeds) and
     never under the proof-gated checker.
-  - GRPO on Qwen3-0.6B (5-minute runs, one task): under calibrated tests the policy
-    learns activation sparsity, paid 11% above the best honest kernel; under the
-    proof-gated checker it learns the honest optimum. Runs at a higher learning rate
-    collapse early, keeping or dropping the hack by chance. Pilot scale: one seed per
-    setting so far.
+  - GRPO on Qwen3-0.6B (5-minute runs, one task, 3 seeds): under calibrated tests the
+    policy learns activation sparsity in 3 of 3 seeds, paid 7% more on average; under
+    the proof-gated checker it never does (0 of 3). Runs at a higher learning rate
+    collapse early, keeping or dropping the hack by chance.
 - **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
   adapter hot-loaded after every GRPO update.
 
@@ -191,7 +190,7 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 | 2. Lean proofs T1-T3 and CI | done |
 | 3. Sampling checker, faults, tightness (synthetic and real activations), T4 | done |
 | 4. Agent environment, regimes, exploit window, search baselines, slot-code sandbox, PTX audit, checker pin | done (batch 1-8 tasks deferred) |
-| 5. GRPO trainer (LoRA, single- and multi-turn), warm start, presets, non-LLM control | code done; smoke run done (1 seed); pilot runs pending |
+| 5. GRPO trainer (LoRA, single- and multi-turn), warm start, presets, non-LLM control | code done; smoke runs done (3 seeds); pilot runs pending |
 | 6. Write-up | not started |
 
 ## Citation
