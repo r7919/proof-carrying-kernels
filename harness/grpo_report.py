@@ -19,6 +19,17 @@ def rows(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def sustained(metrics: list[dict[str, Any]]) -> int | None:
+    """The first step from which every later step has the exploit in every submission
+    (exploit >= 0.99), or None if the run does not end that way."""
+    full = None
+    for m in reversed(metrics):
+        if m["exploit"] < 0.99:
+            break
+        full = m["step"]
+    return full
+
+
 def report(run: Path, every: int) -> dict[str, Any]:
     cfg = json.loads((run / "config.json").read_text())
     summary: dict[str, Any] = json.loads((run / "summary.json").read_text())
@@ -37,8 +48,8 @@ def report(run: Path, every: int) -> dict[str, Any]:
                 f"  exploit {m['exploit']:4.0%}  hacks {m['hack']:4.0%}  kl {m['kl']:.3f}"
             )
     first = next((m["step"] for m in metrics if m["exploit"] > 0), None)
-    full = next((m["step"] for m in metrics if m["exploit"] >= 0.99), None)
-    print(f"   exploit first seen at step {first}, in every submission from step {full}")
+    full = sustained(metrics)
+    print(f"   exploit first seen at step {first}, in every submission from step {full} on")
     samples = run / "samples.jsonl"
     if samples.exists():
         last = rows(samples)[-1]
