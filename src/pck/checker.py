@@ -8,6 +8,22 @@ from numpy.typing import NDArray
 from pck.fp import U32, U64, gamma, next_up, round_up_f32, sum_up
 
 
+class WeightBank:
+    """The parts of the check that depend only on W: its blocks in FP64 and the rounded-up
+    a_beta = sum_{i in beta} |W_i|. Build it once per W and pass it to every
+    `BlockedChecker` of that W (one per input), instead of recomputing it per input."""
+
+    def __init__(self, W: NDArray[np.floating], block: int) -> None:
+        m, n = W.shape
+        if block < 1 or m % block:
+            raise ValueError(f"block={block} must be positive and divide m={m}")
+        self.shape, self.block = (m, n), block
+        self.W_blocks = W.reshape(m // block, block, n).astype(np.float64)
+        with np.errstate(over="ignore", invalid="ignore"):
+            # past the FP32 range: inf, so tau is inf and the check fails closed
+            self.a_up = round_up_f32(sum_up(np.abs(self.W_blocks).sum(axis=1), block))
+
+
 class BlockedChecker:
     """One randomized checksum per block of ``block`` output rows.
 
@@ -23,22 +39,27 @@ class BlockedChecker:
     """
 
     def __init__(
-        self, W: NDArray[np.floating], x: NDArray[np.floating], block: int, height: int
+        self,
+        W: NDArray[np.floating],
+        x: NDArray[np.floating],
+        block: int,
+        height: int,
+        bank: WeightBank | None = None,
     ) -> None:
         m, n = W.shape
         if x.shape != (n,):
             raise ValueError(f"x has shape {x.shape}, expected ({n},)")
-        if block < 1 or m % block:
-            raise ValueError(f"block={block} must be positive and divide m={m}")
+        if bank is None:
+            bank = WeightBank(W, block)
+        elif bank.shape != (m, n) or bank.block != block:
+            raise ValueError("the weight bank was built for another W or block")
         self.m, self.n = m, n
         self.block = block
         self.num_blocks = m // block
-        self.W_blocks = W.reshape(self.num_blocks, block, n).astype(np.float64)
+        self.W_blocks = bank.W_blocks
         self.x = x.astype(np.float64)
         with np.errstate(over="ignore", invalid="ignore"):
-            a = sum_up(np.abs(self.W_blocks).sum(axis=1), block)
-            a_up = round_up_f32(a)  # past FP32 range: inf, so tau is inf and fails
-            self.abs_bound: NDArray[np.float64] = sum_up(a_up @ np.abs(self.x), n)
+            self.abs_bound: NDArray[np.float64] = sum_up(bank.a_up @ np.abs(self.x), n)
         """An upper bound on a_beta . |x| for every block."""
         self.gamma_h = gamma(height)
         self.coef = next_up(next_up(self.gamma_h) + U32)

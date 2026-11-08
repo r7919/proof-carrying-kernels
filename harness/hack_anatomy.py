@@ -22,7 +22,7 @@ from pck.agent.config import Config, emulate
 from pck.agent.env import TimingTable, hidden_suite, task_suite
 from pck.agent.spec import Spec
 from pck.agent.tasks import HELD_OUT, TRAIN, locks
-from pck.checker import BlockedChecker
+from pck.checker import BlockedChecker, WeightBank
 from pck.fp import gamma
 from pck.gemv import abs_row_sums, reference_gemv
 
@@ -34,6 +34,7 @@ def worst(
 ) -> tuple[float, float, float]:
     """Max error over the inputs (x spec bound, x sum|Wx|) and the checker's accept rate."""
     rng = np.random.default_rng(0)
+    bank = WeightBank(W, spec.block)
     over_spec, over_sum, accepted = 0.0, 0.0, 0
     for x in xs:
         y = emulate(cfg, W, x)
@@ -41,7 +42,7 @@ def worst(
         a = np.maximum(abs_row_sums(W, x), np.finfo(np.float64).tiny)
         over_spec = max(over_spec, float(np.max(err / (gamma(spec.h_spec) * a))))
         over_sum = max(over_sum, float(np.max(err / a)))
-        checker = BlockedChecker(W, x, spec.block, spec.h_spec)
+        checker = BlockedChecker(W, x, spec.block, spec.h_spec, bank)
         accepted += bool(checker.verdict(y, rng, checks=spec.checks).all())
     return over_spec, over_sum, accepted / len(xs)
 
