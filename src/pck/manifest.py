@@ -13,6 +13,7 @@ Update the lock after a deliberate change to the checker:
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import subprocess
@@ -51,8 +52,23 @@ class CheckerMismatch(RuntimeError):
     """The checker on disk is not the pinned one."""
 
 
+_HASHES: dict[Path, tuple[tuple[int, int], str]] = {}
+
+
+def _file_hash(path: Path) -> str:
+    """SHA-256 of a file, re-read only when its modification time or size changes (proof-
+    gated episodes check the pin on every start)."""
+    st = path.stat()
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _HASHES.get(path)
+    if cached is None or cached[0] != stamp:
+        cached = (stamp, hashlib.sha256(path.read_bytes()).hexdigest())
+        _HASHES[path] = cached
+    return cached[1]
+
+
 def file_hashes() -> dict[str, str]:
-    return {f: hashlib.sha256((SRC / f).read_bytes()).hexdigest() for f in TRUSTED}
+    return {f: _file_hash(SRC / f) for f in TRUSTED}
 
 
 def combined(hashes: dict[str, str]) -> str:
@@ -92,14 +108,21 @@ def lean_hash() -> str | None:
     ]
     h = hashlib.sha256()
     for f in files:
-        h.update(str(f.relative_to(lean)).encode() + b"\0" + f.read_bytes() + b"\0")
+        h.update(str(f.relative_to(lean)).encode() + b"\0" + _file_hash(f).encode() + b"\0")
     return h.hexdigest()
 
 
 def git_commit() -> str | None:
+    return _git_commit(ROOT)
+
+
+@functools.cache
+def _git_commit(root: Path) -> str | None:
+    """HEAD of the checkout at ``root``, once per process (the code that runs is the code
+    loaded at the start)."""
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+            ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
         )
     except (OSError, subprocess.CalledProcessError):
         return None
