@@ -1,4 +1,4 @@
-# uv run python harness/tightness.py   (CPU, bit-exact model of the coalesced kernel), 2026-11-04
+# uv run python harness/tightness.py   (CPU, bit-exact model of the coalesced kernel), 2026-11-08
 m = n = 4096, coalesced kernel (256 threads), tree height h = 23
 gamma_h = 1.371e-06 (proven)   Higham-Mary gamma~ = 1.698e-06 (probabilistic)
 
