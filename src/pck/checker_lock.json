@@ -1,14 +1,14 @@
 {
-  "checker": "c8a2b9986c0aa0d1416792b715b5eac828fdcf654f18b25584345131da518230",
+  "checker": "fe479ca951b5c3f479281d18d461d2e38138f43d7313de5d8e3282a2d1e4a114",
   "files": {
     "fp.py": "ee86968a3c80047d0c8b83490cb02037be7d5085446643e14fc3b549012b074d",
     "checker.py": "9a1b099a627df0e98cdb61be166600f33d71da1f3e5c0104146da370cfc72ea8",
     "sampling.py": "286f6f2a719c9c38e7668694163c9814c06982ab6f2ab62d03742a15ed05750d",
     "member.py": "631db9cc5370ca3e3aacd491d3c26fb35e4ae56a08639fdcfecf77f45539e17e",
     "cuda/checker.py": "d1ec74c4aea2b982b33dc7817567d780f3da8dbbfca401494d64d08dd8a4c3b7",
-    "cuda/sampling.py": "7555a90c0fa3ae4996bd2b43cedb269aa6297d44636b3c9e8c065141d5934a65",
+    "cuda/sampling.py": "961976aed1c950166990439bdfebf87089adbddf6c17bff0488c8e4bba96ffa9",
     "cuda/csrc/checker.h": "19458eb1ebb55b0ba4b33baaedf493c35e283d36d2bd20fbfbae93d6c050b23a",
     "cuda/csrc/checker_kernel.cu": "a61f0c9f28757fc52608a4f9783443e2d98546ace83040dd9eaf0ad137c19538",
-    "cuda/csrc/sampling_kernel.cu": "8df6bddf644cd60260328091495dfe9523914abf1d736ee6d707dc1633db75f7"
+    "cuda/csrc/sampling_kernel.cu": "2c05aa3d840f2345053406ded7c3369ed2c4da83c399980ae5ec7ab18a486752"
   }
 }

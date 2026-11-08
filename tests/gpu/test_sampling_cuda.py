@@ -156,3 +156,16 @@ def test_vocabulary_beyond_shared_memory_bitmap() -> None:
     assert check_topk_gpu(lg, selected, 64).passed.all()
     nucleus, lengths = topp_select(lg, 0.5)
     assert check_topp_gpu(lg, nucleus, lengths, 0.5, tol=1e-5).passed.all()
+
+
+def test_masked_minus_inf_logits_do_not_raise_false_alarms() -> None:
+    """A -inf logit (masked, e.g. by top-k before top-p) has probability 0; the GPU check
+    must agree with the CPU check instead of turning it into a NaN mass."""
+    lg = logits(4, 1000, seed=5, scale=2.0)
+    lg[:, ::7] = -math.inf
+    selected, lengths = topp_select(lg, 0.9)
+    res = check_topp_gpu(lg, selected, lengths, 0.9, tol=1e-5)
+    assert res.passed.all() and torch.isfinite(res.mass).all()
+    for b in range(4):
+        sel = selected[b, : lengths[b]].cpu().numpy()
+        assert check_topp(lg[b].cpu().numpy(), sel, 0.9, tol=1e-5)

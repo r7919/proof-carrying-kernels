@@ -72,7 +72,8 @@ def check_topp_gpu(
     ``tol`` is the sampler's declared probability error; the checker adds its own rounding
     slack. Each of the V terms comes from FP32 expf (within 2 ulp, so 4 u32) on a split
     argument (1 + lo for e^lo, rounding of lo and the FMA: under 2 u32 more), so within
-    6 u32 relative, plus at most 2^-148 absolute where it underflows; the sums are FP64.
+    6 u32 relative, plus at most 2^-148 absolute where it underflows or where the kernel
+    drops it (d < -128, so below e^-128: masked -inf logits); the sums are FP64.
     Each of the S segment partials is rescaled with one more FP64 exp, multiply and add.
     The largest term is exactly 1, so Z >= 1, and each mass (a ratio of two such sums) is
     within 2 * (6 u32 + V 2^-148) + gamma_{V+3S+16}(u64) of exact; the slack rounds this up

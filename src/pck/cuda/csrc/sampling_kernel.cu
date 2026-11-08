@@ -146,7 +146,10 @@ __global__ void __launch_bounds__(kThreads)
       const float hi = __double2float_rn(d);
       const float lo = __double2float_rn(d - static_cast<double>(hi));  // |lo| <= u32 |d|
       const float eh = expf(hi);
-      const double e = static_cast<double>(__fmaf_rn(eh, lo, eh));  // e^lo ~ 1 + lo
+      // Terms with d < -128 (masked -inf logits, or tiny temperatures) are below e^-128,
+      // within the host's V 2^-148 absolute allowance; dropping them also keeps -inf from
+      // turning into NaN (hi = -inf makes lo NaN). A NaN logit is flagged above.
+      const double e = d >= -128.0 ? static_cast<double>(__fmaf_rn(eh, lo, eh)) : 0.0;
       z = __dadd_rn(z, e);
       if (bitmap[j >> 5] & (1u << (j & 31))) z_sel = __dadd_rn(z_sel, e);
     }
