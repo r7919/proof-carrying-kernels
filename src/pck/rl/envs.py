@@ -197,7 +197,7 @@ class TableEpisode(Episode):
         i = self._index()
         assert i is not None
         out = self.sim.submit(i)
-        is_hack = out.passed and hack(self.task, self.cfg, self.spec)
+        is_hack = hack(self.task, self.cfg, self.spec)  # regime-independent, like Episode
         reward = (out.speedup if out.passed else 0.0) - cost
         cert = None
         if out.passed and self.regime == "proof-gated":
