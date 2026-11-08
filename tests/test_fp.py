@@ -149,3 +149,18 @@ class TestTreeHeight:
 @given(st.integers(0, 10**9), st.integers(1, 10**6))
 def test_ceil_div(a: int, b: int) -> None:
     assert ceil_div(a, b) == math.ceil(Fraction(a, b))
+
+
+@given(st.lists(st.floats(0, 1e300), min_size=1, max_size=200))
+def test_sum_up_bounds_the_exact_sum(values: list[float]) -> None:
+    """`sum_up` of the round-to-nearest sum is never below the exact sum, in any order."""
+    from fractions import Fraction
+
+    from pck.fp import sum_up
+
+    exact = sum(Fraction(v) for v in values)
+    for order in (values, values[::-1], sorted(values)):
+        s = 0.0
+        for v in order:
+            s += v
+        assert Fraction(float(sum_up(s, len(values)))) >= exact

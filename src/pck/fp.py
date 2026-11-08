@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
@@ -47,6 +49,28 @@ def round_up_f32(v: ArrayLike) -> NDArray[np.float64]:
     low = f.astype(np.float64) < v64
     f[low] = np.nextafter(f[low], np.float32(np.inf))
     return f.astype(np.float64)
+
+
+def next_up(v: float, steps: int = 1) -> float:
+    """``v`` moved up by ``steps`` representable FP64 values."""
+    for _ in range(steps):
+        v = math.nextafter(v, math.inf)
+    return v
+
+
+def sum_up_factor(terms: int) -> float:
+    """A factor that turns a round-to-nearest FP64 sum of ``terms`` non-negative values
+    (any order) into an upper bound on the exact sum: with |s - S| <= gamma_{terms} S,
+    S <= s / (1 - gamma) <= s (1 + 2 gamma) for gamma <= 1/2. Rounded up; multiply by it,
+    then round the product up once (`sum_up`)."""
+    return next_up(1.0 + 2.0 * gamma(max(terms, 1), U64))
+
+
+def sum_up(s: ArrayLike, terms: int) -> NDArray[np.float64]:
+    """An upper bound on the exact sums whose FP64 round-to-nearest values are ``s``."""
+    s64 = np.asarray(s, dtype=np.float64)
+    with np.errstate(over="ignore"):
+        return np.nextafter(s64 * sum_up_factor(terms), np.inf)
 
 
 def ceil_div(a: int, b: int) -> int:
