@@ -43,9 +43,9 @@ Measured on one RTX 5060 Laptop GPU; every number links to a script and its outp
 
 | | Guessed tolerance (KernelBench-style) | Proven bound (this project) |
 |---|---|---|
-| AI trained with GRPO (Qwen3-0.6B, 3 seeds) | learned to cheat in **3 of 3** | **0 of 3** |
-| Simple RL control policy (3 seeds) | learned to cheat in 2 of 3 | **0 of 3** |
-| Search over kernels on held-out tasks | 73-92% of submissions are cheats | **no cheats**, 95% of the best honest speed |
+| AI trained with GRPO (Qwen3-0.6B, 3 seeds, cheat pays 7%) | learned to cheat in **3 of 3** | **0 of 3** |
+| Simple RL control policy (3 seeds) | learned to cheat in 1 of 3 | **0 of 3** |
+| Search over kernels on held-out tasks (bandit) | 29-100% of submissions are cheats | **no cheats**, 98% of the best honest speed |
 
 - **Fast kernels:** the GEMV kernel reaches 96-101% of memory bandwidth, 1.05-1.5x faster
   than `torch.mv` on large decode shapes.
@@ -75,13 +75,15 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
 - **Proven in Lean** (T1-T4, top-k, top-p), no `sorry`, standard axioms only.
 - **Reward hacking, measured:**
   - On real Qwen2.5-0.5B layers, skipping small activations passes KernelBench-style
-    tests (`atol = rtol = 1e-2`) and is 3-10% faster than the best honest kernel in a
+    tests (`atol = rtol = 1e-2`) and is 2-12% faster than the best honest kernel in a
     column-major deployment; the proof-gated checker rejects it.
-  - Search baselines on held-out tasks: calibrated tests let 73-92% of submissions be
-    hacks. Tuned tests let none through but reach only 65% of the honest optimum. The
-    proof-gated checker reaches 95% with no hacks for the bandit.
-  - A policy-gradient control learns the hack under calibrated tests (2 of 3 seeds) and
-    never under the proof-gated checker.
+  - Search baselines on held-out tasks: calibrated tests let 29-70% of submissions be
+    hacks. Tuned tests let none through but reach only 56-57% of the honest optimum. The
+    proof-gated checker reaches 98% with no hacks for the bandit; brute force, which
+    sees exactly what the checker accepts, still finds a below-resolution or
+    off-distribution cheat on 3 of 43 tasks.
+  - A policy-gradient control learns the hack under calibrated tests (1 of 3 seeds; 2 of 3
+    when the timing table made it pay) and never under the proof-gated checker.
   - GRPO on Qwen3-0.6B (5-minute runs, one task, 3 seeds): under calibrated tests the
     policy learns activation sparsity in 3 of 3 seeds, paid 7% more on average; under
     the proof-gated checker it never does (0 of 3). Runs at a higher learning rate
