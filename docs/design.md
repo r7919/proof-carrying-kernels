@@ -108,7 +108,9 @@ rejects `sorry` and any non-standard axiom).
   the core of CUDA's accurate `expf`; its error is the documented bound the top-p theorems
   take as `eps`.
 - **Pinned checker** (`src/pck/manifest.py`, `checker_lock.json`). The trusted checker
-  files are hash-pinned: the CPU and GPU checkers, `fp.py`, and the checker CUDA sources.
+  files are hash-pinned: the CPU and GPU checkers, `fp.py`, `member.py`, the checker CUDA
+  sources and their bindings and build flags (`bindings.cpp`, `_ext.py`), and the vLLM plugin
+  that feeds the membership check.
   A proof-gated episode refuses to start if the code on disk differs from the pin, and a
   test fails until a deliberate change is re-pinned (`python -m pck.manifest --update`).
 - **Manifests.** Every proof-gated pass carries a `Manifest` that records:
