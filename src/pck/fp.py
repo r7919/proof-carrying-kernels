@@ -73,6 +73,32 @@ def sum_up(s: ArrayLike, terms: int) -> NDArray[np.float64]:
         return np.nextafter(s64 * sum_up_factor(terms), np.inf)
 
 
+def softmax_eps(vocab: int, zmax: float = 0.0) -> float:
+    """Bound on |computed - exact| for a mass of an FP64 softmax over ``vocab`` logits: a
+    fraction A / S of kept terms, computed either as one quotient or as a sum of per-term
+    probabilities, and also covering one subtraction of a probability from a mass.
+
+    The terms are ``e_j = exp(x_j)`` with ``x_j = fl(z_j - max z)``, ``z = fl(l / T)``;
+    ``zmax`` bounds |z_j| over finite logits when the division is inexact (0 for T = 1 or
+    for logits used directly). Each argument is off by at most ``u |x_j|`` (the subtraction)
+    plus ``2 zmax u`` (both divisions); with ``exp`` within 2 ulp (4u relative), each term is
+    within ``1.01 (u |x| e^x + (2 zmax u + 4u) e^x) <= 1.01 (u / e + (2 zmax u + 4u) e_j)``
+    (1.01 covers ``e^d - 1 <= d (1 + d)`` for d <= 0.01). The largest true term is 1, so the
+    true sum S >= 1, and with any summation order S is computed within ``E S``,
+    ``E = 1.01 (V u / e + 2 zmax u + 4u) + 1.01 gamma_V(u)`` (E <= 0.01). A mass is then
+    within ``(2E + gamma_{V+2}(u) (1 + E)) / (1 - E)``, the gamma covering per-term divisions
+    and the sum of probabilities, plus 2u for one subtraction."""
+    u = U64
+    v = max(vocab, 1)
+    e = 1.01 * (v * u / math.e + 2.0 * zmax * u + 4.0 * u) + 1.01 * gamma(v, u)
+    if not e <= 0.01:
+        raise ValueError(
+            f"softmax over {vocab} logits with |logit / T| up to {zmax} is too "
+            "large to check in FP64"
+        )
+    return (2.0 * e + gamma(v + 2, u) * (1.0 + e)) / (1.0 - e) + 2.0 * u
+
+
 def ceil_div(a: int, b: int) -> int:
     """ceil(a / b) for non-negative a and positive b."""
     return -(-a // b)

@@ -164,3 +164,38 @@ def test_sum_up_bounds_the_exact_sum(values: list[float]) -> None:
         for v in order:
             s += v
         assert Fraction(float(sum_up(s, len(values)))) >= exact
+
+
+@given(
+    st.lists(st.floats(-50, 50), min_size=2, max_size=60),
+    st.sampled_from([1.0, 0.7, 0.01]),
+    st.data(),
+)
+def test_softmax_eps_bounds_the_fp64_softmax_mass(
+    logits: list[float], temperature: float, data: st.DataObject
+) -> None:
+    """Masses from `pck.sampling.softmax64` stay within `softmax_eps` of the exact softmax
+    (60-digit decimal), including small temperatures where |logit / T| is large."""
+    from decimal import Decimal, getcontext
+
+    from pck.fp import softmax_eps
+    from pck.sampling import softmax64
+
+    getcontext().prec = 60
+    a = np.array(logits, dtype=np.float32)
+    k = data.draw(st.integers(1, a.size))
+    sel = np.argsort(-a.astype(np.float64), kind="stable")[:k]
+    z = [Decimal(float(v)) / Decimal(temperature) for v in a]
+    top = max(z)
+    e = [(v - top).exp() for v in z]
+    exact = sum(e[i] for i in sel) / sum(e)
+    computed = float(softmax64(a, temperature)[sel].sum())
+    zmax = 0.0 if temperature == 1.0 else float(np.abs(a.astype(np.float64) / temperature).max())
+    assert abs(Decimal(computed) - exact) <= Decimal(softmax_eps(a.size, zmax))
+
+
+def test_softmax_eps_refuses_unrepresentable_ranges() -> None:
+    from pck.fp import softmax_eps
+
+    with pytest.raises(ValueError, match="too large"):
+        softmax_eps(10, zmax=1e15)
