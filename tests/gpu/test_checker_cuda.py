@@ -236,3 +236,17 @@ def test_legit_output_passes_at_extreme_scales(scale_exp: int) -> None:
     y = gemv_coalesced(Wt, xt, 128)
     assert torch.isfinite(y).all()
     assert checker.verdict(xt, y).all()
+
+
+def test_an_overflowing_threshold_fails_closed() -> None:
+    """Weights of +-2^100 and x = 2^24 make each term of a . |x| (2^106 * 2^24) overflow the
+    kernel's FP32 per-thread sums, so tau is inf; that must reject a made-up output instead
+    of accepting anything."""
+    m, n = 128, 4096
+    signs = torch.where(torch.arange(n) % 2 == 0, 1.0, -1.0)
+    Wt = (signs * 2.0**100).repeat(m, 1).to(torch.bfloat16).cuda()
+    xt = torch.full((n,), 2.0**24).to(torch.bfloat16).cuda()
+    checker = make(Wt, 64, checks=2)
+    res = checker.check(xt, torch.full((m,), 1e30, device="cuda"))
+    assert not torch.isfinite(res.tau).any()  # the overflow path is exercised
+    assert not res.passed.any()

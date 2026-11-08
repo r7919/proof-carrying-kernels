@@ -177,7 +177,8 @@ __global__ void __launch_bounds__(kThreads)
     const double cabs_up = __dmul_ru(kOnePlusU32, s_total);
     const double eps = __dmul_ru(d.geps, __dadd_ru(cabs_up, yabs_up));
     const double tau = __dadd_ru(__dadd_ru(__dmul_ru(d.coef, s_total), eps), d.tau_floor);
-    d.passed[check_block] = nonfinite == 0 && fabs(rho) <= tau;  // NaN compares false
+    // An overflowing threshold (tau = inf) fails closed; NaN compares false.
+    d.passed[check_block] = nonfinite == 0 && isfinite(tau) && fabs(rho) <= tau;
     d.rho[check_block] = rho;
     d.tau[check_block] = tau;
   }

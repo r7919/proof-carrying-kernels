@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import torch
 
 from pck.cuda._ext import extension
-from pck.fp import U32, U64, ceil_div, gamma
+from pck.fp import U32, U64, ceil_div, gamma, next_up, sum_up_factor
 
 DEFAULT_BLOCK = 128
 """Rows per checksum. b = 128 keeps the checker under 5% of a decode layer on an RTX 5060
@@ -41,12 +41,6 @@ def round_up_bf16(v: torch.Tensor) -> torch.Tensor:
     bits = f.view(torch.int32)
     bits = torch.where((bits & 0xFFFF) != 0, (bits + 0x10000) & -0x10000, bits)
     return bits.view(torch.float32).to(torch.bfloat16)  # exact: low 16 bits are zero
-
-
-def _next_up(v: float, steps: int = 1) -> float:
-    for _ in range(steps):
-        v = math.nextafter(v, math.inf)
-    return v
 
 
 @dataclass(frozen=True)
@@ -103,11 +97,13 @@ class GpuBlockedChecker:
             c[k] = torch.einsum("bi,bin->bn", self.r[k].double(), W64).float()
         self.c = c
 
-        self.a = round_up_bf16(W64.abs().sum(dim=1))
+        # the FP64 sum over the block rounds to nearest; bound it from above first
+        col = W64.abs().sum(dim=1) * sum_up_factor(block)
+        self.a = round_up_bf16(torch.nextafter(col, torch.full_like(col, math.inf)))
         if not bool(torch.isfinite(self.a).all()):
             raise ValueError("sum of |W| over a block overflows BF16")
 
-        self.coef = _next_up(gamma(height) + U32, 2)
+        self.coef = next_up(gamma(height) + U32, 2)
 
         if segments is None:
             sms = torch.cuda.get_device_properties(W.device).multi_processor_count
@@ -125,8 +121,8 @@ class GpuBlockedChecker:
         fp64_height = max(n + block + 1, 21 + segments + ceil_div(block, KERNEL_THREADS))
         gh = gamma(fp64_height, U64)
         # The two errors compound: (1 + gh)(1 + g2) - 1 (proved in lean/PCK/T3.lean).
-        self.geps = _next_up(gh + g2 + gh * g2, 4)
-        self.tau_floor = _next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
+        self.geps = next_up(gh + g2 + gh * g2, 4)
+        self.tau_floor = next_up(n * 2.0**-148, 2)  # TwoProduct inexactness under underflow
         scratch = (checks, self.num_blocks, segments)
         self._partial_cx = torch.empty(scratch, dtype=torch.float64, device=W.device)
         self._partial_s = torch.empty(scratch, dtype=torch.float64, device=W.device)
