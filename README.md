@@ -24,6 +24,9 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
   output; 99-100% of exponent and sign bit flips.
 - **Sampling checker** at 7-11% of the top-k sampler's cost and 19-26% of top-p
   selection's, catching every wrong set from an approximate (sharded) top-k.
+- **Every token vLLM samples checked** by a proven membership check (plugin, opt-in):
+  115 of 115 injected bad tokens caught, 0 false alarms in 12,877 honest tokens; costs 43%
+  of decode throughput so far (FP64 over the full vocabulary).
 - **Proven in Lean** (T1-T4, top-k, top-p), no `sorry`, standard axioms only.
 - **Reward hacking, measured:**
   - On real Qwen2.5-0.5B layers, skipping small activations passes KernelBench-style
