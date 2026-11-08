@@ -27,7 +27,7 @@ follows from a formula, and that formula is **proven correct in Lean 4**, a proo
 assistant that checks every step of the math. A checker using that bound:
 
 - **never rejects honest work.** That's proven, and there were 0 false alarms in 40 million GPU checks;
-- **leaves no room to cut corners.** Every planted shortcut was caught;
+- **catches any error larger than the proven bound.** Every planted shortcut was caught;
 - **is cheap.** It adds 3.9% to a full Llama-3-8B decode layer.
 
 The same checkers also catch silent hardware faults such as bit flips. The motto: *verify the

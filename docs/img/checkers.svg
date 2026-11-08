@@ -63,5 +63,5 @@
   <g class="a-v2"><text x="626" y="214" class="bad">cheat: caught</text></g>
 
   <text x="24" y="270" class="muted">Same check, different "close enough": the proven range is exactly as wide as honest rounding can be.</text>
-  <text x="24" y="290" class="muted">Honest work always passes, and cheats have no room to hide. (Not to scale.)</text>
+  <text x="24" y="290" class="muted">Honest work always passes; anything off by more than that is caught. (Not to scale.)</text>
 </svg>
