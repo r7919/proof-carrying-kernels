@@ -73,6 +73,8 @@ def test_rejects_tokens_outside_top_k_or_the_nucleus() -> None:
     assert not v.ok and v.mass_above > 0.9
     assert check_member(logits, 0, greedy=True).ok and not check_member(logits, 1, greedy=True).ok
     assert not check_member(np.array([1.0, math.nan]), 0).ok
+    # an id outside the vocabulary is rejected, never wrapped around to another token
+    assert not check_member(logits, 5, top_k=5).ok and not check_member(logits, -1, top_k=1).ok
 
 
 def test_the_error_bound_is_tiny_at_llm_vocabularies() -> None:
@@ -162,3 +164,23 @@ def test_fp32_terms_stay_within_the_bound_on_wide_logits() -> None:
     for i in range(rows):
         ref = check_member(logits[i], int(tokens[i]), top_p=0.99)
         assert abs(float(out["mass_above"][i]) - ref.mass_above) <= member_eps32(vocab)
+
+
+def test_bad_token_ids_and_a_stale_host_top_k_reject_instead_of_crashing() -> None:
+    """Out-of-range sampled ids reject (no device-side assert); a host top-k copy that is
+    smaller than the device's (stale) cannot index out of bounds."""
+    torch = pytest.importorskip("torch")
+    from pck.member import check_members
+
+    rng = np.random.default_rng(3)
+    logits = torch.tensor(rng.standard_normal((4, 50)), dtype=torch.float32)
+    tokens = torch.tensor([-1, 50, 10_000, int(logits[3].argmax())])
+    top_k = torch.tensor([5, 5, 5, 20], dtype=torch.int32)
+    out = check_members(
+        logits,
+        tokens,
+        top_k,
+        torch.full((4,), 0.9, dtype=torch.float64),
+        top_k_host=np.array([5, 5, 5, 5]),
+    )  # stale: row 3 has k = 20
+    assert out["ok"].tolist() == [False, False, False, True]

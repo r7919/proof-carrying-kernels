@@ -31,20 +31,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from pck.fp import U32, U64, gamma
+from pck.fp import U32, U64, gamma, next_up, softmax_eps
 
 
 def member_eps(vocab: int) -> float:
-    """Bound on |computed r - r| in FP64, for any summation order (`gamma` of the proven
-    tree bound), FP64 ``exp`` within 2 ulp and one rounding per subtraction and division.
-
-    Each term ``exp(fl(l_j - m))`` is off by at most ``u (|x| e^x + 2 e^x) <= u (1/e + 2 e_j)``
-    absolutely (x = l_j - m <= 0); the sum has the maximum's term exactly 1, so both sums
-    (kept mass Z >= 1, mass above A <= Z) are within ``E Z``, E = V u (1/e + 0.01) + 2u +
-    gamma_V(u) (1 + 3u); the quotient is then within ``2E / (1 - E) + u``."""
-    u = U64
-    e = vocab * u * (1 / math.e + 0.01) + 2 * u + gamma(vocab, u) * (1 + 3 * u)
-    return 2 * e / (1 - e) + u
+    """Bound on |computed r - r| for the FP64 reference `check_member`: `pck.fp.softmax_eps`
+    with no division (the logits are used directly, so only ``l_j - m`` rounds), for any
+    summation order and FP64 ``exp`` within 2 ulp."""
+    return softmax_eps(vocab)
 
 
 @dataclass(frozen=True)
@@ -67,7 +61,7 @@ def check_member(
 ) -> MemberVerdict:
     """The CPU reference check for one row (see the module docstring)."""
     lv = np.asarray(logits, dtype=np.float64)
-    if np.isnan(lv).any():
+    if np.isnan(lv).any() or not 0 <= token < lv.size:  # no wrap-around for negative ids
         return MemberVerdict(False, -1, math.nan)
     lt = lv[token]
     above = int(np.count_nonzero(lv > lt))
@@ -83,8 +77,8 @@ def check_member(
     m = lv[kept].max()
     e = np.where(kept, np.exp(lv - m), 0.0)
     r = float(e[lv > lt].sum() / e.sum())
-    slack = tol + member_eps(lv.size)
-    return MemberVerdict(bool(r < top_p + slack), above, r)
+    slack = next_up(tol + member_eps(lv.size))
+    return MemberVerdict(bool(r < next_up(top_p + slack)), above, r)
 
 
 def member_eps32(vocab: int) -> float:
@@ -94,7 +88,9 @@ def member_eps32(vocab: int) -> float:
     ``l_j - m = hi + lo`` (TwoSum in FP32, exact without overflow, |lo| <= u32 |hi|) as
     ``fl(expf(hi) + fl(expf(hi) lo))``; terms with ``hi < -128`` are dropped. With FP32
     ``expf`` within 2 ulp (4 u32 relative), ``|e^lo - 1 - lo| <= lo^2 <= (128 u32)^2`` and
-    two roundings, each term is within ``6 u32`` relative plus ``2^-124`` absolute (subnormal
+    two roundings (the product's only on the small ``expf(hi) lo``), the computed term over
+    the exact one is within ``(1 + 4u)(1 + u)(1 + 128 u * u)(1 + (128 u)^2) - 1 < 5.01 u32``
+    (u = u32), so each term is within ``6 u32`` relative plus ``2^-124`` absolute (subnormal
     or flushed results, and dropped terms below ``e^-128``). The sums are FP64 over at most
     V terms plus one product (the count of tokens tied at the k-th logit times their term),
     within ``gamma_{V+2}(u64)``. The largest true term is 1, so Z >= 1, and both sums (kept
@@ -146,7 +142,8 @@ def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is
     rows, vocab = lv.shape
     f64 = torch.float64
     t = tokens.reshape(rows, 1).to(torch.long)
-    lt = lv.gather(1, t)
+    in_range = ((t >= 0) & (t < vocab)).reshape(rows)  # a bad id rejects; never gathers
+    lt = lv.gather(1, t.clamp(0, vocab - 1))
     gt = lv > lt
     above = gt.sum(1)
     finite = ~torch.isnan(lv).any(1)
@@ -164,7 +161,7 @@ def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is
     else:
         is_greedy = torch.zeros(rows, dtype=torch.bool, device=lv.device)
         ok_k = k
-    ok = finite & (above < ok_k)
+    ok = finite & in_range & (above < ok_k)
     mass_above = torch.zeros(rows, dtype=f64, device=lv.device)
     if top_p is not None:
         p = top_p.to(f64)
@@ -175,7 +172,8 @@ def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is
             m = vals[:, :1]
             e = torch.where(in_k, _terms(vals, m), 0.0)
             ties = (lv >= kth).sum(1) - in_k.sum(1)  # kept tokens at the k-th logit, not in vals
-            e_kth = e.gather(1, (k - 1).reshape(rows, 1)).reshape(rows)  # vals[k-1] is kth
+            kc = (k.clamp(max=k_lim) - 1).reshape(rows, 1)  # clamped: a stale host copy
+            e_kth = e.gather(1, kc).reshape(rows)  # vals[k-1] is kth
             z = e.sum(1, dtype=f64) + ties * e_kth.to(f64)
             a = torch.where(vals > lt, e, 0.0).sum(1, dtype=f64)
         else:
@@ -192,7 +190,8 @@ def check_members(  # pragma: no cover (torch: tests/test_member.py, where it is
             a = torch.where(gt, e, 0.0).sum(1, dtype=f64)
         r = a / z
         mass_above = torch.where(p < 1.0, r, 0.0)
-        slack = tol + member_eps32(vocab)
-        topp_ok = (p >= 1.0) | is_greedy | (r < p + slack)
+        slack = next_up(tol + member_eps32(vocab))
+        high = torch.nextafter(p + slack, torch.full_like(p, math.inf))  # rounded outward
+        topp_ok = (p >= 1.0) | is_greedy | (r < high)
         ok = ok & topp_ok
     return {"ok": ok, "above": above, "mass_above": mass_above}
