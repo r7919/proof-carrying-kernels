@@ -26,7 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from pck.fp import ceil_div
-from pck.gemv import WARP
+from pck.gemv import WARP, halving_sum
 
 COL_THREADS = (32, 64, 128, 256)
 COL_VECS = (2, 4, 8)
@@ -84,13 +84,6 @@ def column_space() -> list[ColumnConfig]:
     ]
 
 
-def _halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:
-    while a.shape[-1] > 1:
-        half = a.shape[-1] // 2
-        a = (a[..., :half] + a[..., half:]).astype(np.float32)
-    return a[..., 0]
-
-
 def emulate_column(
     cfg: ColumnConfig, W: NDArray[np.float32], x: NDArray[np.float32]
 ) -> NDArray[np.float32]:
@@ -110,4 +103,4 @@ def emulate_column(
     acc = np.zeros((m, s, k), np.float32)
     for i in range(length):
         acc = (acc + P[:, :, i, :]).astype(np.float32)
-    return _halving_sum(_halving_sum(acc))
+    return halving_sum(halving_sum(acc))

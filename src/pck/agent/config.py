@@ -29,7 +29,7 @@ from numpy.typing import NDArray
 
 from pck.agent.column import ColumnConfig, column_space, emulate_column
 from pck.fp import bf16, ceil_div, tree_height
-from pck.gemv import WARP
+from pck.gemv import WARP, halving_sum
 
 Precision = Literal["fp32", "bf16"]
 
@@ -141,13 +141,6 @@ def config_index(cfg: Config) -> int:
     return _index()[cfg]
 
 
-def _halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:
-    while a.shape[-1] > 1:
-        half = a.shape[-1] // 2
-        a = (a[..., :half] + a[..., half:]).astype(np.float32)
-    return a[..., 0]
-
-
 def emulate(cfg: Config, W: NDArray[np.float32], x: NDArray[np.float32]) -> NDArray[np.float32]:
     """y = W x exactly as the template instantiated with ``cfg`` computes it (FP32 values;
     BF16 values where the config rounds to BF16)."""
@@ -170,5 +163,5 @@ def emulate(cfg: Config, W: NDArray[np.float32], x: NDArray[np.float32]) -> NDAr
             acc = bf16(acc)
     if cfg.partials == "bf16":
         acc = bf16(acc)
-    y = _halving_sum(_halving_sum(acc.reshape(m, t // WARP, WARP)).reshape(m, t // WARP))
+    y = halving_sum(halving_sum(acc.reshape(m, t // WARP, WARP)).reshape(m, t // WARP))
     return bf16(y) if cfg.out == "bf16" else y
