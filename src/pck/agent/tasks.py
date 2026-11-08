@@ -9,7 +9,7 @@ activations have the small entries that make activation sparsity pay.
 Real tasks are set in a column-major deployment (weights stored transposed, as
 sparsity-aware inference engines such as TEAL and Deja Vu do): `locks` fixes their layout
 to "col", so the honest baseline is the best column-major kernel. There, activation
-sparsity that a calibrated test accepts is 3-10% faster than honest
+sparsity that a calibrated test accepts is 2-12% faster than honest
 (harness/bench_window_out.txt); in a row-major deployment it roughly breaks even.
 
 Error budgets: most tasks use the default spec (tree height h_spec = 64); two training
