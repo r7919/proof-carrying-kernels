@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 260" width="800" height="260" role="img" aria-labelledby="t d">
+  <title id="t">The experiment: an AI writes kernels and is paid by a checker</title>
+  <desc id="d">A loop: the AI agent writes a CUDA kernel, the GPU runs and times it, the checker judges it, and the reward (the speedup if correct, zero if caught) trains the agent with GRPO. Swapping the checker changes what the agent learns: under a guessed tolerance it learned to cheat in 3 of 3 seeds, under the proven bound in 0 of 3.</desc>
+  <style>
+    :root { --ink: #1f2328; --muted: #59636e; --box: #f6f8fa; --edge: #d1d9e0; --proof: #1f6feb;
+            --proof-fill: #ddeaff; --pulse: #1f6feb; --ok: #1a7f37; --bad: #cf222e; }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e6edf3; --muted: #9198a1; --box: #151b23; --edge: #3d444d; --proof: #4493f8;
+              --proof-fill: #0d2d5e; --pulse: #4493f8; --ok: #3fb950; --bad: #f85149; }
+    }
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+    .title { font-size: 15px; font-weight: 600; }
+    .sub { font-size: 12.5px; fill: var(--muted); }
+    .box { fill: var(--box); stroke: var(--edge); stroke-width: 1.5; }
+    .proof { fill: var(--proof-fill); stroke: var(--proof); stroke-width: 2; }
+    .track { fill: none; stroke: var(--edge); stroke-width: 2; }
+    .pulse { fill: var(--pulse); }
+    .arrow { fill: var(--edge); }
+    .note { font-size: 13.5px; }
+    .bad { fill: var(--bad); font-weight: 700; }
+    .ok { fill: var(--ok); font-weight: 700; }
+    @media (prefers-reduced-motion: reduce) { .pulse { display: none; } }
+  </style>
+
+  <!-- the loop track, drawn under the boxes so the pulse shows only between them -->
+  <path id="loop" d="M105,80 H705 V172 H105 Z" class="track"/>
+  <polygon points="222,75 230,80 222,85" class="arrow"/>
+  <polygon points="412,75 420,80 412,85" class="arrow"/>
+  <polygon points="622,75 630,80 622,85" class="arrow"/>
+  <polygon points="100,128 105,120 110,128" class="arrow"/>
+  <circle r="6" class="pulse">
+    <animateMotion dur="5s" repeatCount="indefinite" rotate="0"><mpath href="#loop"/></animateMotion>
+  </circle>
+
+  <rect x="20" y="40" width="170" height="80" rx="8" class="box"/>
+  <text x="105" y="74" text-anchor="middle" class="title">AI agent</text>
+  <text x="105" y="94" text-anchor="middle" class="sub">writes a CUDA kernel</text>
+
+  <rect x="230" y="40" width="150" height="80" rx="8" class="box"/>
+  <text x="305" y="74" text-anchor="middle" class="title">GPU</text>
+  <text x="305" y="94" text-anchor="middle" class="sub">runs it and times it</text>
+
+  <rect x="420" y="40" width="170" height="80" rx="8" class="proof"/>
+  <text x="505" y="74" text-anchor="middle" class="title">Checker</text>
+  <text x="505" y="94" text-anchor="middle" class="sub">is the output correct?</text>
+
+  <rect x="630" y="40" width="150" height="80" rx="8" class="box"/>
+  <text x="705" y="68" text-anchor="middle" class="title">Reward</text>
+  <text x="705" y="88" text-anchor="middle" class="sub">speedup if correct,</text>
+  <text x="705" y="104" text-anchor="middle" class="sub">0 if caught</text>
+
+  <text x="405" y="162" text-anchor="middle" class="sub">the agent learns from the reward (GRPO)</text>
+
+  <text x="20" y="214" class="note">Swap the checker and compare what the agent learns:</text>
+  <text x="20" y="238" class="note">guessed tolerance → <tspan class="bad">learned to cheat in 3 of 3 runs</tspan>;   proven bound → <tspan class="ok">0 of 3</tspan></text>
+</svg>
