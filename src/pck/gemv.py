@@ -57,7 +57,7 @@ def emulate_gemv(
     return acc[:, 0]
 
 
-def _halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:
+def halving_sum(a: NDArray[np.float32]) -> NDArray[np.float32]:
     """Reduce the last axis (a power of two) by repeated halving: a[i] += a[i + len/2].
 
     This is the order of a ``__shfl_down_sync`` reduction with offsets len/2, ..., 1.
@@ -97,8 +97,8 @@ def emulate_gemv_coalesced(
     acc = terms[:, :, 0].copy()
     for j in range(1, terms.shape[2]):
         acc = (acc + terms[:, :, j]).astype(np.float32)
-    warp_sums = _halving_sum(acc.reshape(m, threads // WARP, WARP))
-    return _halving_sum(warp_sums)
+    warp_sums = halving_sum(acc.reshape(m, threads // WARP, WARP))
+    return halving_sum(warp_sums)
 
 
 def reference_gemv(W: NDArray[np.floating], x: NDArray[np.floating]) -> NDArray[np.float64]:
