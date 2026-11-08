@@ -154,3 +154,16 @@ def test_spread_error_passes_at_most_13_16_of_sign_draws() -> None:
     trials = 4000
     passes = sum(bool(checker.verdict((y + D).astype(np.float32), rng)[0]) for _ in range(trials))
     assert passes / trials <= 13 / 16 + 0.03
+
+
+def test_an_overflowing_threshold_fails_closed() -> None:
+    """Weights of +-2^125 make a_beta (a sum over the block of 8 rows) overflow FP32, so tau
+    is inf; that must reject, not accept everything (the honest output is exactly 0)."""
+    m, n = 8, 64
+    signs = np.where(np.arange(n) % 2 == 0, 1.0, -1.0)
+    W = np.tile(signs * 2.0**125, (m, 1)).astype(np.float32)
+    x = np.ones(n, dtype=np.float32)
+    checker = BlockedChecker(W, x, block=m, height=tree_height(n, 32))
+    rng = np.random.default_rng(0)
+    assert not checker.verdict(np.full(m, 1e30), rng).any()
+    assert not checker.verdict(np.zeros(m), rng).any()  # fails closed, even when honest
