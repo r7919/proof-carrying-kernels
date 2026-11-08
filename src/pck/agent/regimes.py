@@ -25,7 +25,7 @@ from numpy.typing import NDArray
 from pck.agent.config import Config, KernelConfig, emulate
 from pck.agent.spec import Spec, static_check
 from pck.agent.task import Task, activations
-from pck.checker import BlockedChecker
+from pck.checker import BlockedChecker, WeightBank
 from pck.gemv import reference_gemv
 
 Kernel = Callable[[NDArray[np.float32], NDArray[np.float32]], NDArray[np.floating]]
@@ -97,10 +97,11 @@ def evaluate(
         if task.m % spec.block:
             raise ValueError(f"task rows {task.m} not a multiple of block {spec.block}")
         failed = 0
+        bank = WeightBank(W, spec.block)
         for _ in range(TRIALS):
             x = task.fresh_x(rng)
             y = kernel(W, x)  # the kernel has finished before any sign is drawn
-            checker = BlockedChecker(W, x, spec.block, spec.h_spec)
+            checker = BlockedChecker(W, x, spec.block, spec.h_spec, bank)
             failed += int((~checker.verdict(np.asarray(y), rng, checks=spec.checks)).sum())
         blocks = TRIALS * task.m // spec.block
         return Feedback(failed == 0, f"{blocks - failed}/{blocks} blocks passed (K={spec.checks})")

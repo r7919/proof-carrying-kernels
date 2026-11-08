@@ -167,3 +167,21 @@ def test_an_overflowing_threshold_fails_closed() -> None:
     rng = np.random.default_rng(0)
     assert not checker.verdict(np.full(m, 1e30), rng).any()
     assert not checker.verdict(np.zeros(m), rng).any()  # fails closed, even when honest
+
+
+def test_a_shared_weight_bank_gives_the_same_verdicts() -> None:
+    from pck.checker import WeightBank
+
+    rng = np.random.default_rng(1)
+    W = bf16(rng.standard_normal((16, 40)))
+    bank = WeightBank(W, 8)
+    for seed in range(3):
+        x = bf16(np.random.default_rng(seed).standard_normal(40))
+        y = emulate_gemv(W, x, 4)
+        own, shared = BlockedChecker(W, x, 8, 10), BlockedChecker(W, x, 8, 10, bank)
+        np.testing.assert_array_equal(own.abs_bound, shared.abs_bound)
+        assert (
+            own.verdict(y, np.random.default_rng(0)) == shared.verdict(y, np.random.default_rng(0))
+        ).all()
+    with pytest.raises(ValueError, match="another W"):
+        BlockedChecker(W, x, 16, 10, bank)

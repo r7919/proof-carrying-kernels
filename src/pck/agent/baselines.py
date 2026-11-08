@@ -39,7 +39,7 @@ from pck.agent.env import TimingTable, is_hack
 from pck.agent.regimes import KB_TOL, TRIALS, RegimeName, _tolerance_check, tuned_atol
 from pck.agent.spec import Spec, static_check
 from pck.agent.task import Task
-from pck.checker import BlockedChecker
+from pck.checker import BlockedChecker, WeightBank
 
 FRESH: tuple[RegimeName, ...] = ("calibrated", "tuned", "proof-gated")
 
@@ -83,7 +83,8 @@ def compute_verdicts(
     W = task.W
     rng = np.random.default_rng([task.seed, 77])
     xs = [task.fresh_x(rng) for _ in range(inputs)]
-    checkers = [BlockedChecker(W, x, spec.block, spec.h_spec) for x in xs]
+    bank = WeightBank(W, spec.block)
+    checkers = [BlockedChecker(W, x, spec.block, spec.h_spec, bank) for x in xs]
     atol = tuned_atol(task, spec)
     out: dict[str, Verdict] = {}
     space = config_space()
