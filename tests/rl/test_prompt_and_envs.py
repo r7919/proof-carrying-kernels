@@ -157,6 +157,29 @@ def test_locked_exploit_knobs_leave_only_slot_code() -> None:
         RunConfig(env="table", lock_exploit_knobs=True)
 
 
+def test_free_layout_opens_the_row_template_and_int8_on_real_tasks() -> None:
+    from pck.agent.config import config_index
+    from pck.rl.config import run_locks
+    from pck.rl.envs import _arms, write
+
+    real = task_by_key("896x896-qwen2.5-0.5b-l12/o_proj")
+    int8 = KernelConfig(vec=16, weights="int8").as_dict()
+    locked = run_locks(RunConfig(tasks=(real.key,)), real)
+    assert locked["layout"] == "col" and write(real, int8)[0] is None
+    cfg = RunConfig(tasks=(real.key,), free_layout=True)
+    free = cfg.freed()
+    assert "layout" not in run_locks(cfg, real) and free == {"layout"}
+    q, message = write(real, int8, free)
+    assert message == "ok" and q is not None and config_index(q) in _arms(real, free)
+    text = single_turn(real, run_locks(cfg, real), slot=False)
+    assert "weights: one of" in text and "int8" in text
+    synthetic = task_by_key("896x896-gauss")  # no layout lock to lift
+    assert _arms(synthetic, free) == _arms(synthetic)
+    env = EpisodeEnv("calibrated", free=free)
+    ep = env.start(real, np.random.default_rng(0))
+    assert ep.call("write_kernel", {"config": int8}) == "ok"
+
+
 def test_the_honest_demonstration_slot_is_accepted() -> None:
     from pck.agent.sandbox import check_slot
     from pck.rl.prompt import HONEST_SLOT

@@ -31,12 +31,12 @@ if TYPE_CHECKING:
     from pck.rl.train import Policy
 
 
-def honest_configs(task: Task) -> list[Config]:
+def honest_configs(task: Task, free: frozenset[str] = frozenset()) -> list[Config]:
     """The task's allowed configs that use no exploit knob and meet its spec."""
     space = config_space()
     return [
         space[i]
-        for i in sorted(_arms(task))
+        for i in sorted(_arms(task, free))
         if not is_exploit(space[i]) and not static_check(space[i], task.n, task.spec)
     ]
 
@@ -58,7 +58,7 @@ def demo_single(policy: Policy, task: Task, rng: np.random.Generator) -> Tokens:
     locked = run_locks(policy.cfg, task)
     text = single_turn(task, locked, policy.cfg.slot_code)
     prompt = policy.encode(policy.render([{"role": "user", "content": text}]))
-    cfgs = honest_configs(task)
+    cfgs = honest_configs(task, policy.cfg.freed())
     cfg = cfgs[int(rng.integers(len(cfgs)))]
     fields = _compact(cfg, locked)
     if (slot := _slot(policy, rng)) is not None:
@@ -79,7 +79,7 @@ def demo_multi(
     prompt = multi_turn(task, locked, policy.cfg.slot_code, max_calls)
     ids = policy.encode(policy.render([{"role": "user", "content": prompt}]))
     mask = [0] * len(ids)
-    cfgs = honest_configs(task)
+    cfgs = honest_configs(task, policy.cfg.freed())
     cfg = cfgs[int(rng.integers(len(cfgs)))]
     args: dict[str, Any] = {"config": _compact(cfg, locked)}
     if (slot := _slot(policy, rng)) is not None:
