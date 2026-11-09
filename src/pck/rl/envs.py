@@ -28,7 +28,7 @@ from pck.agent.env import Backend, EmulatorBackend, Episode, Result, TimingTable
 from pck.agent.regimes import TRIALS, RegimeName
 from pck.agent.spec import static_check
 from pck.agent.task import Task
-from pck.agent.tasks import locks
+from pck.agent.tasks import episode_locks
 from pck.manifest import Manifest
 
 CALL_COST = 0.01
@@ -66,29 +66,31 @@ class Outcome:
 
 
 @cache
-def _writer(task: Task) -> Episode:
+def _writer(task: Task, free: frozenset[str]) -> Episode:
     # Validation only, so no pinned-checker check: the regime is irrelevant here.
-    return Episode(task, "calibrated", TimingTable(), locked=locks(task))
+    return Episode(task, "calibrated", TimingTable(), locked=episode_locks(task, free))
 
 
-def write(task: Task, fields: dict[str, Any]) -> tuple[Config | None, str]:
+def write(
+    task: Task, fields: dict[str, Any], free: frozenset[str] = frozenset()
+) -> tuple[Config | None, str]:
     """Validate a reply's config against the task's locks, as write_kernel does."""
-    ep = _writer(task)
+    ep = _writer(task, free)
     message = ep._write_kernel(fields, None)
     return (ep.cfg if message == "ok" else None), message
 
 
 @cache
-def _arms(task: Task) -> frozenset[int]:
-    return frozenset(allowed(locks(task)))
+def _arms(task: Task, free: frozenset[str] = frozenset()) -> frozenset[int]:
+    return frozenset(allowed(episode_locks(task, free)))
 
 
 class TableEnv:
     """Rewards from the verdict and timing tables: single-turn via `run`, multi-turn via
-    `start` (a `TableEpisode`)."""
+    `start` (a `TableEpisode`). ``free`` names task locks the run lifts (`episode_locks`)."""
 
-    def __init__(self, regime: RegimeName) -> None:
-        self.regime = regime
+    def __init__(self, regime: RegimeName, free: frozenset[str] = frozenset()) -> None:
+        self.regime, self.free = regime, free
         self.verdicts, self.timing = verdict_table(), timing_table()
         if self.verdicts.tasks == {}:
             raise ValueError("empty verdict table")
@@ -96,23 +98,30 @@ class TableEnv:
     @cache  # noqa: B019 (one env per run)
     def _sim(self, task: Task) -> Simulator:
         rng = np.random.default_rng(0)
-        return Simulator(task, self.regime, self.verdicts, self.timing, locks(task), rng)
+        locked = episode_locks(task, self.free)
+        return Simulator(task, self.regime, self.verdicts, self.timing, locked, rng)
 
     def start(self, task: Task, rng: np.random.Generator, max_calls: int = 10) -> Episode:
         """A multi-turn episode answered from the tables (`TableEpisode`)."""
         if task.key not in self.verdicts.tasks:
             raise KeyError(f"{task.key} is not in the verdict table; run harness/verdicts.py")
-        sim = Simulator(task, self.regime, self.verdicts, self.timing, locks(task), rng)
+        locked = episode_locks(task, self.free)
+        sim = Simulator(task, self.regime, self.verdicts, self.timing, locked, rng)
         return TableEpisode(
-            task, self.regime, sim, seed=int(rng.integers(2**31)), max_calls=max_calls
+            task,
+            self.regime,
+            sim,
+            self.free,
+            seed=int(rng.integers(2**31)),
+            max_calls=max_calls,
         )
 
     def run(self, task: Task, fields: Any, slot: str | None, rng: np.random.Generator) -> Outcome:
         cost = CALL_COST * SINGLE_TURN_CALLS
         if not isinstance(fields, dict):  # no config in the reply
             return Outcome(-1.0 - cost, False, False, 0.0, False, False, None)
-        cfg, _ = write(task, fields)
-        if cfg is None or slot is not None or config_index(cfg) not in _arms(task):
+        cfg, _ = write(task, fields, self.free)
+        if cfg is None or slot is not None or config_index(cfg) not in _arms(task, self.free):
             return Outcome(-1.0 - cost, False, False, 0.0, False, False, None)
         if task.key not in self.verdicts.tasks:
             raise KeyError(f"{task.key} is not in the verdict table; run harness/verdicts.py")
@@ -141,14 +150,21 @@ class TableEpisode(Episode):
     not name the failing row, and a failed proof-gated check does not count the failed
     blocks. Slot code needs the CUDA environment and is rejected at compile."""
 
-    def __init__(self, task: Task, regime: RegimeName, sim: Simulator, **kwargs: Any) -> None:
-        super().__init__(task, regime, sim.timing, locked=locks(task), **kwargs)
-        self.sim = sim
+    def __init__(
+        self,
+        task: Task,
+        regime: RegimeName,
+        sim: Simulator,
+        free: frozenset[str] = frozenset(),
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(task, regime, sim.timing, locked=episode_locks(task, free), **kwargs)
+        self.sim, self.free = sim, free
 
     def _index(self) -> int | None:
         assert self.cfg is not None
         i = config_index(self.cfg)
-        return i if i in _arms(self.task) else None
+        return i if i in _arms(self.task, self.free) else None
 
     def _compile(self) -> str:
         if self.cfg is None:
@@ -219,8 +235,9 @@ class EpisodeEnv:
         regime: RegimeName,
         backend: Backend | None = None,
         extra_locks: dict[str, object] | None = None,
+        free: frozenset[str] = frozenset(),
     ) -> None:
-        self.regime = regime
+        self.regime, self.free = regime, free
         self.backend = backend or EmulatorBackend()
         self.extra_locks = dict(extra_locks or {})
         """Fixed on top of the task's own locks (e.g. `config.EXPLOIT_LOCKS`)."""
@@ -233,7 +250,7 @@ class EpisodeEnv:
             backend=self.backend,
             seed=int(rng.integers(2**31)),
             max_calls=max_calls,
-            locked={**locks(task), **self.extra_locks},
+            locked={**episode_locks(task, self.free), **self.extra_locks},
         )
 
     def close(self) -> None:

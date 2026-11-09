@@ -109,6 +109,11 @@ def locks(task: Task) -> dict[str, object]:
     return out
 
 
+def episode_locks(task: Task, free: frozenset[str] = frozenset()) -> dict[str, object]:
+    """The task's locks without the ones a run lifts (``free``, e.g. ``{"layout"}``)."""
+    return {k: v for k, v in locks(task).items() if k not in free}
+
+
 ALL: list[Task] = TRAIN + HELD_OUT
 
 

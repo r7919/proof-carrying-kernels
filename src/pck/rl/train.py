@@ -379,13 +379,13 @@ def summarize(trajs: list[Trajectory]) -> dict[str, float]:
 
 def make_env(cfg: RunConfig) -> TableEnv | EpisodeEnv:
     if cfg.env == "table":
-        return TableEnv(cfg.regime)
+        return TableEnv(cfg.regime, cfg.freed())
     extra = EXPLOIT_LOCKS if cfg.lock_exploit_knobs else None
     if cfg.env == "cuda":
         from pck.agent.sandbox import CudaBackend
 
-        return EpisodeEnv(cfg.regime, CudaBackend(), extra)
-    return EpisodeEnv(cfg.regime, None, extra)
+        return EpisodeEnv(cfg.regime, CudaBackend(), extra, cfg.freed())
+    return EpisodeEnv(cfg.regime, None, extra, cfg.freed())
 
 
 def run_dir(cfg: RunConfig) -> Path:

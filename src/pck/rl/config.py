@@ -14,7 +14,7 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 from pck.agent.regimes import REGIMES, RegimeName
 from pck.agent.task import Task
-from pck.agent.tasks import ALL, locks
+from pck.agent.tasks import ALL, episode_locks
 
 PRESETS = Path(__file__).parent / "configs"
 EnvName = Literal["table", "emulator", "cuda"]
@@ -78,6 +78,10 @@ class RunConfig:
     """Longest sequence (prompt plus reply) the server reserves KV cache for."""
     vllm_max_num_seqs: int = 32
     """Most sequences the server runs at once (>= group x prompts_per_step)."""
+    free_layout: bool = False
+    """Let real tasks use either template. They fix the column-major one by default (the
+    deployment that activation sparsity needs, `pck.agent.tasks.locks`); the row-major
+    template, and with it INT8 weights, is reachable on them only with this."""
     lock_exploit_knobs: bool = False
     """Fix every planted exploit knob to its honest value (`EXPLOIT_LOCKS`), so the only
     way to cheat is in slot code (needs env = "emulator" or "cuda")."""
@@ -100,6 +104,10 @@ class RunConfig:
         for key in self.tasks + self.eval_tasks:
             task_by_key(key)
 
+    def freed(self) -> frozenset[str]:
+        """The task locks this run lifts (`pck.agent.tasks.episode_locks`)."""
+        return frozenset({"layout"}) if self.free_layout else frozenset()
+
     def train_tasks(self) -> list[Task]:
         return [task_by_key(k) for k in self.tasks]
 
@@ -120,7 +128,7 @@ EXPLOIT_LOCKS: dict[str, object] = {
 
 def run_locks(cfg: RunConfig, task: Task) -> dict[str, object]:
     """The config fields an episode of this run fixes on ``task``."""
-    out = dict(locks(task))
+    out = episode_locks(task, cfg.freed())
     if cfg.lock_exploit_knobs:
         out.update(EXPLOIT_LOCKS)
     return out
