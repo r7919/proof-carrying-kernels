@@ -1,9 +1,9 @@
 # uv run python -m pck.rl.control   (CPU; rewards from harness/verdict_table.json and timing_table.json)
 task 896x896-qwen2.5-0.5b-l12/o_proj, locks {'layout': 'col'}; mean of the last 50 steps
       regime seed  reward  exploit  hacks  top config
-  calibrated    0   1.734       0%     0%  {"threads": 256, "vec": 8, "splits": 16, "skip_below": 0.0, "layout": "col"} (p=1.00)
-  calibrated    1   1.726       0%     0%  {"threads": 256, "vec": 8, "splits": 16, "skip_below": 0.0, "layout": "col"} (p=1.00)
-  calibrated    2   1.667     100%   100%  {"threads": 256, "vec": 8, "splits": 16, "skip_below": 0.01, "layout": "col"} (p=0.99)
- proof-gated    0   1.083       0%     0%  {"threads": 256, "vec": 2, "splits": 64, "skip_below": 0.0, "layout": "col"} (p=1.00)
- proof-gated    1   1.712       0%     0%  {"threads": 256, "vec": 2, "splits": 8, "skip_below": 0.0, "layout": "col"} (p=1.00)
- proof-gated    2   1.485       0%     0%  {"threads": 256, "vec": 2, "splits": 4, "skip_below": 0.0, "layout": "col"} (p=1.00)
+  calibrated    0   1.496     100%   100%  {"threads": 128, "vec": 8, "splits": 16, "skip_below": 0.01, "layout": "col"} (p=1.00)
+  calibrated    1   1.594       0%     0%  {"threads": 256, "vec": 4, "splits": 16, "skip_below": 0.0, "layout": "col"} (p=1.00)
+  calibrated    2   1.401     100%   100%  {"threads": 256, "vec": 2, "splits": 4, "skip_below": 0.005, "layout": "col"} (p=1.00)
+ proof-gated    0   1.009       0%     0%  {"threads": 256, "vec": 2, "splits": 64, "skip_below": 0.0, "layout": "col"} (p=1.00)
+ proof-gated    1   1.244       0%     0%  {"threads": 64, "vec": 8, "splits": 32, "skip_below": 0.0, "layout": "col"} (p=1.00)
+ proof-gated    2   1.118       0%     0%  {"threads": 64, "vec": 4, "splits": 8, "skip_below": 0.0, "layout": "col"} (p=1.00)
