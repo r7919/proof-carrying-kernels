@@ -13,18 +13,23 @@ import re
 from typing import Any
 
 from pck.agent.column import COL_THREADS, COL_VECS, SKIP_BELOW, SPLITS
-from pck.agent.config import ROWS_PER_BLOCK, THREADS, UNROLLS, VECS
+from pck.agent.config import GROUP, INT8_VECS, ROWS_PER_BLOCK, THREADS, UNROLLS, WEIGHTS
 from pck.agent.task import Task
 
 ROW_FIELDS = {
     "threads": (THREADS, "threads per block"),
-    "vec": (VECS, "BF16 values per vector load"),
+    "vec": (INT8_VECS, "values per vector load (16 only with int8 weights)"),
     "unroll": (UNROLLS, "vector loads per loop iteration"),
     "rows_per_block": (ROWS_PER_BLOCK, "output rows per block"),
     "acc": (("fp32", "bf16"), "accumulator precision"),
     "partials": (("fp32", "bf16"), "precision of each thread's sum before the reduction"),
     "out": (("fp32", "bf16"), "output precision"),
     "skip_tail": ((False, True), "skip the columns past the last full tile"),
+    "weights": (
+        WEIGHTS,
+        "weights read by the kernel: bf16 as stored, or int8, a copy made at load with one"
+        f" scale per {GROUP} columns of a row (fp32 path only)",
+    ),
 }
 COL_FIELDS = {
     "threads": (COL_THREADS, "threads per block (32 per warp; each warp sums some columns)"),
