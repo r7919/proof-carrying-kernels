@@ -20,7 +20,6 @@ Real tasks need the captured layers first: uv run python -m harness.capture_laye
 Run plugged in, in high-performance mode:
   uv run python harness/sweep_template.py            (about 20 minutes on an RTX 5060)
   uv run python harness/sweep_template.py --quick    (three tasks, for a smoke test)
-  uv run python harness/sweep_template.py --column-only   (re-time column-major only)
 Writes harness/timing_table.json.
 """
 
@@ -129,33 +128,20 @@ def main() -> None:
     parser.add_argument("--reps", type=int, default=30)
     parser.add_argument("--quick", action="store_true", help="three tasks only")
     parser.add_argument("--out", type=Path, default=OUT)
-    parser.add_argument(
-        "--column-only",
-        action="store_true",
-        help="re-time only column-major configs, keeping the row-major times in --out",
-    )
     args = parser.parse_args()
 
     timer = ColdL2Timer(args.warmup, args.reps)
     space = config_space()
     spec = Spec()
     tasks: list[Task] = [ALL[0], ALL[-1], ALL[-2]] if args.quick else ALL
-    old = TimingTable.load(args.out) if args.column_only else None
     table = TimingTable()
     shape_times: dict[tuple[int, int], list[float]] = {}
 
-    def time_fixed(
-        W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor, q8: Q8, key: str
-    ) -> list[float]:
+    def time_fixed(W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor, q8: Q8) -> list[float]:
         """Times of the input-independent variants (NaN for the others), in one round-robin
-        pass; with --column-only, the row-major ones are reused from --out."""
+        pass."""
         out = [float("nan")] * len(space)
         todo = [i for i, c in enumerate(space) if not depends_on_x(c)]
-        if old is not None:
-            for i in todo:
-                if not isinstance(space[i], ColumnConfig):
-                    out[i] = old.times[key][i]
-            todo = [i for i in todo if isinstance(space[i], ColumnConfig)]
         times = round_robin(timer, [runner(space[i], W, WT, x, q8) for i in todo])
         for i, t in zip(todo, times, strict=True):
             out[i] = t
@@ -176,7 +162,7 @@ def main() -> None:
         base = timer(partial(torch.mv, W, x)).median_ms * 1e3
         shape = (task.m, task.n)
         if shape not in shape_times:
-            shape_times[shape] = time_fixed(W, WT, x, q8, task.key)
+            shape_times[shape] = time_fixed(W, WT, x, q8)
         fixed = shape_times[shape]
         times = list(fixed)
         for i, c in enumerate(space):
