@@ -142,7 +142,7 @@ Knobs for a bigger run:
 ### The pilot and slot-code runs
 
 ```bash
-uv run python -m pck.rl.train --config pilot --compare seed=0   # overnight per seed
+uv run python -m pck.rl.train --config pilot --compare seed=0   # 400 steps: several hours per seed
 uv run python -m pck.rl.train --config slot --compare           # ~15 min per regime
 ```
 
@@ -152,7 +152,8 @@ uv run python -m pck.rl.train --config slot --compare           # ~15 min per re
   microseconds, and a test checks the answers agree with full CPU-model episodes. The
   group's episodes run in lockstep, one batched generation per turn. On the 8 GB GPU it
   generates with Hugging Face, since 1.7B does not fit twice beside a vLLM server. For a
-  quick trial: `model=Qwen/Qwen3-0.6B generator=vllm steps=40`.
+  quick trial: `model=Qwen/Qwen3-0.6B generator=vllm steps=40`. The archived runs
+  (`harness/grpo_pilot/`) used `steps=150`, 36-94 minutes per regime and seed on the 5060.
 - **Slot code** (`configs/slot.toml`): the policy may add CUDA (`slot_code`). With
   `lock_exploit_knobs`, every planted exploit knob is fixed to its honest value, so the
   only way to cheat is to write the cheat, e.g. a `pck_slot_use` that skips small
