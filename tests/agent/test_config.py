@@ -10,6 +10,7 @@ from pck.agent.config import (
     KernelConfig,
     config_index,
     config_space,
+    depends_on_x,
     emulate,
     is_exploit,
     make_config,
@@ -73,7 +74,7 @@ def test_invalid_configs_are_rejected(kwargs: dict[str, object], match: str) -> 
 
 def test_config_space_is_every_valid_config() -> None:
     space = config_space()
-    assert len(space) == len(set(space)) == 2112 + 672
+    assert len(space) == len(set(space)) == 2112 + 672 + 165
     assert KernelConfig() in space
     assert all(config_index(c) == i for i, c in enumerate(space))
     assert KernelConfig().as_dict()["layout"] == "row"
@@ -130,3 +131,44 @@ def test_invalid_column_configs_are_rejected() -> None:
         ColumnConfig(skip_below=0.5)
     with pytest.raises(ValueError, match="shape"):
         emulate_column(ColumnConfig(), *problem(4, 10, 0)[:1], np.ones(3, np.float32))
+
+
+def test_int8_weights_round_each_group_to_its_own_scale() -> None:
+    from pck.agent.config import GROUP, dequantize_rows, quantize_rows
+
+    rng = np.random.default_rng(5)
+    m, n = 7, GROUP + 40  # one full group and one partial group per row
+    W = bf16(rng.standard_normal((m, n)).astype(np.float32))
+    W[3, :GROUP] = 0  # an all-zero group: scale 1, values 0
+    Wq, S = quantize_rows(W)
+    assert Wq.shape == (m, n) and Wq.dtype == np.int8 and S.shape == (m, 2)
+    assert S[0, 1] == np.float32(np.abs(W[0, GROUP:]).max() / np.float32(127)) and S[3, 0] == 1
+    assert np.abs(Wq).max() == 127 and not Wq[3, :GROUP].any()
+    deq = dequantize_rows(Wq, S)
+    step = np.repeat(S, GROUP, axis=1)[:, :n]
+    assert np.all(np.abs(deq - W) <= step / 2 + np.abs(W) * 2.0**-23)
+    # the kernel is the FP32 template on the dequantized weights
+    x = bf16(rng.standard_normal(n).astype(np.float32))
+    for vec in (1, 4, 16):
+        q = KernelConfig(threads=64, vec=vec, weights="int8")
+        honest = KernelConfig(threads=64, vec=min(vec, 8))
+        if vec == 16:  # no BF16 twin with vec 16: compare the sum directly
+            assert np.allclose(emulate(q, W, x), deq.astype(np.float64) @ x, rtol=1e-5)
+        else:
+            np.testing.assert_array_equal(emulate(q, W, x), emulate(honest, deq, x))
+
+
+def test_int8_weights_are_an_exploit_with_their_own_numerics() -> None:
+    from pck.agent.baselines import numerics_key
+
+    q = KernelConfig(weights="int8")
+    assert is_exploit(q) and not depends_on_x(q)
+    assert numerics_key(KernelConfig()) == ("row", 256, 8, "fp32", "fp32", "fp32", False)
+    assert numerics_key(q) != numerics_key(KernelConfig())
+    assert KernelConfig(vec=16, weights="int8").tree_height(4096) == tree_height(4096, 256, 16)
+    with pytest.raises(ValueError, match="vec"):
+        KernelConfig(vec=16)  # 16 only with int8
+    with pytest.raises(ValueError, match="int8 weights need"):
+        KernelConfig(acc="bf16", weights="int8")
+    with pytest.raises(ValueError, match="weights"):
+        KernelConfig(weights="fp8")  # type: ignore[arg-type]
