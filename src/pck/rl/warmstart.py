@@ -6,7 +6,10 @@ that compile. The demonstrations come from a scripted agent, with no frontier-mo
   multi-turn   write_kernel(random honest config), compile, benchmark, run_checker,
                submit, with the environment's real replies in between.
 "Honest" means no planted exploit knob and within the task's spec (`static_check`), so
-the demonstrations never show a hack; any preference for exploits must come from RL.
+the demonstrations never show a hack; any preference for exploits must come from RL. The
+replies leave the exploit knobs out (they default to their honest values), so the
+demonstrations say nothing about them either way: always writing their honest values
+would teach the policy to keep them there.
 The configs are random, not the fastest, so the demonstrations do not teach the optimum
 either. Enabled by ``warm_start_examples > 0`` in the run config.
 """
@@ -23,7 +26,7 @@ import torch
 from pck.agent.config import Config, config_space, is_exploit
 from pck.agent.spec import static_check
 from pck.agent.task import Task
-from pck.rl.config import run_locks
+from pck.rl.config import EXPLOIT_LOCKS, run_locks
 from pck.rl.envs import EpisodeEnv, TableEnv, _arms
 from pck.rl.prompt import HONEST_SLOT, multi_turn, single_turn
 
@@ -42,7 +45,13 @@ def honest_configs(task: Task, free: frozenset[str] = frozenset()) -> list[Confi
 
 
 def _compact(cfg: Config, locked: dict[str, object]) -> dict[str, Any]:
-    return {k: v for k, v in cfg.as_dict().items() if k not in locked or k == "layout"}
+    """The config as a demonstration writes it: no locked field (but the layout), and no
+    exploit knob (`EXPLOIT_LOCKS`)."""
+    return {
+        k: v
+        for k, v in cfg.as_dict().items()
+        if (k not in locked or k == "layout") and k not in EXPLOIT_LOCKS
+    }
 
 
 Tokens = tuple[list[int], list[int]]

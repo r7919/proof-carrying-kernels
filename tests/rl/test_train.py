@@ -123,6 +123,7 @@ def test_a_short_run_writes_its_logs(tokenizer: Any, tmp_path: Path) -> None:
 def test_demonstrations_are_honest_and_well_formed(tokenizer: Any) -> None:
     from pck.agent.config import is_exploit, make_config
     from pck.agent.spec import static_check
+    from pck.rl.config import EXPLOIT_LOCKS
     from pck.rl.prompt import parse_call, parse_config
     from pck.rl.warmstart import demo_multi, demo_single, honest_configs
 
@@ -134,6 +135,8 @@ def test_demonstrations_are_honest_and_well_formed(tokenizer: Any) -> None:
     reply = p.decode([t for t, m in zip(ids, mask, strict=True) if m])
     parsed = parse_config(reply)
     assert parsed is not None and make_config(parsed[0]) in cfgs
+    # the exploit knobs are left out, so the demonstrations say nothing about them
+    assert not set(parsed[0]) & set(EXPLOIT_LOCKS)
     ids, mask = demo_multi(p, EpisodeEnv("calibrated"), task, rng, max_calls=6)
     assert len(ids) == len(mask)
     turns = p.decode([t for t, m in zip(ids, mask, strict=True) if m]).count('"tool"')
