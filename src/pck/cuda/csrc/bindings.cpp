@@ -20,6 +20,9 @@ cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t 
 cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
                           int threads, int rows_per_block, int vec, int unroll, int flags,
                           cudaStream_t stream);
+cudaError_t gemv_template_q8(const void* Wq, const float* S, const void* x, float* y,
+                             int64_t m, int64_t n, int threads, int rows_per_block, int vec,
+                             int unroll, cudaStream_t stream);
 int64_t column_tiles(int64_t m, int vec);
 cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch,
                         unsigned* tickets, int64_t m, int64_t n, int threads, int vec,
@@ -85,6 +88,35 @@ torch::Tensor gemv_template(const torch::Tensor& W, const torch::Tensor& x, int6
                               static_cast<int>(flags), stream);
   };
   return launch_gemv(W, x, threads, 32, launcher);
+}
+
+torch::Tensor gemv_template_q8(const torch::Tensor& Wq, const torch::Tensor& S,
+                               const torch::Tensor& x, int64_t threads, int64_t rows_per_block,
+                               int64_t vec, int64_t unroll) {
+  TORCH_CHECK(Wq.is_cuda() && S.is_cuda() && x.is_cuda() && Wq.device() == x.device() &&
+                  S.device() == x.device(),
+              "Wq, S and x must be CUDA tensors on one device");
+  TORCH_CHECK(Wq.scalar_type() == torch::kInt8 && S.scalar_type() == torch::kFloat32 &&
+                  x.scalar_type() == torch::kBFloat16,
+              "Wq must be int8, S float32 and x bfloat16");
+  TORCH_CHECK(Wq.dim() == 2 && x.dim() == 1 && x.size(0) == Wq.size(1),
+              "expected Wq of shape (m, n) and x of shape (n,)");
+  const int64_t m = Wq.size(0), n = Wq.size(1);
+  TORCH_CHECK(S.dim() == 2 && S.size(0) == m && S.size(1) == (n + 127) / 128,
+              "expected S of shape (m, ceil(n / 128))");
+  TORCH_CHECK(Wq.is_contiguous() && S.is_contiguous() && x.is_contiguous(),
+              "Wq, S and x must be contiguous");
+  TORCH_CHECK(rows_per_block > 0 && threads % rows_per_block == 0,
+              "rows_per_block must divide threads");
+  const c10::cuda::CUDAGuard guard(Wq.device());
+  auto y = torch::empty({m}, x.options().dtype(torch::kFloat32));
+  if (m == 0) return y;
+  const cudaError_t err = pck::gemv_template_q8(
+      Wq.data_ptr(), S.data_ptr<float>(), x.data_ptr(), y.data_ptr<float>(), m, n,
+      static_cast<int>(threads), static_cast<int>(rows_per_block), static_cast<int>(vec),
+      static_cast<int>(unroll), c10::cuda::getCurrentCUDAStream().stream());
+  TORCH_CHECK(err == cudaSuccess, "template gemv launch failed: ", cudaGetErrorString(err));
+  return y;
 }
 
 torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x,
@@ -278,6 +310,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"),
         pybind11::arg("rows_per_block"), pybind11::arg("vec"), pybind11::arg("unroll"),
         pybind11::arg("flags"));
+  m.def("gemv_template_q8", &gemv_template_q8,
+        "The agent's GEMV template over an INT8 copy of W (pck.agent.config.quantize_rows)",
+        pybind11::arg("Wq"), pybind11::arg("S"), pybind11::arg("x"), pybind11::arg("threads"),
+        pybind11::arg("rows_per_block"), pybind11::arg("vec"), pybind11::arg("unroll"));
   m.def("gemv_column", &gemv_column,
         "The agent's column-major GEMV template over WT = W^T (n, m)", pybind11::arg("WT"),
         pybind11::arg("x"), pybind11::arg("tickets"), pybind11::arg("threads"),
