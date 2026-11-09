@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 
 from pck.cuda._ext import extension
@@ -43,15 +44,38 @@ def template_flags(cfg: KernelConfig) -> int:
     )
 
 
-def gemv_template(W: torch.Tensor, x: torch.Tensor, cfg: KernelConfig) -> torch.Tensor:
-    """y = W x with the agent's template instantiated with ``cfg`` (default slot).
+def gemv_template(
+    W: torch.Tensor,
+    x: torch.Tensor,
+    cfg: KernelConfig,
+    q8: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> torch.Tensor:
+    """y = W x with the agent's template instantiated with ``cfg`` (default slot); with
+    ``cfg.weights == "int8"``, from ``q8 = (Wq, S)``, the INT8 copy on the GPU (`row_q8`).
 
     Matches :func:`pck.agent.config.emulate` bit for bit.
     """
-    y: torch.Tensor = extension().gemv_template(
+    if cfg.weights == "int8":
+        if q8 is None:
+            raise ValueError("an INT8 config needs the INT8 copy of W (q8)")
+        y: torch.Tensor = extension().gemv_template_q8(
+            *q8, x, cfg.threads, cfg.rows_per_block, cfg.vec, cfg.unroll
+        )
+        return y
+    y = extension().gemv_template(
         W, x, cfg.threads, cfg.rows_per_block, cfg.vec, cfg.unroll, template_flags(cfg)
     )
     return y
+
+
+def row_q8(W: np.ndarray, device: torch.device | str = "cuda") -> tuple[torch.Tensor, torch.Tensor]:
+    """The INT8 copy (Wq, S) of W for `gemv_template`, quantized on the CPU by
+    :func:`pck.agent.config.quantize_rows`, so the GPU reads exactly what the CPU model
+    dequantizes."""
+    from pck.agent.config import quantize_rows
+
+    Wq, S = quantize_rows(np.asarray(W, dtype=np.float32))
+    return torch.from_numpy(Wq).to(device), torch.from_numpy(S).to(device)
 
 
 _TICKETS: dict[torch.device, torch.Tensor] = {}

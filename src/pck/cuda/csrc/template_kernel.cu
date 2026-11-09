@@ -13,6 +13,10 @@
 //   PART16  round each thread's sum to BF16 before the warp reduction
 //   OUT16   write y rounded to BF16
 //   SKIP    drop the columns past the last full tile of VEC * tpr
+//   Q8      read an INT8 copy of W (pck.agent.config.quantize_rows; gemv_template_q8): row
+//           i of Wq holds its INT8 values and S[i, g] the scale of columns
+//           [g kGroup, (g + 1) kGroup); the term is fl(fl(q * scale) * x_j). FP32 path only
+//           (no other flag), with VEC up to 16.
 //
 // The slot: pck_slot_term(w, x, j) returns the term added for column j. The default is the
 // exact product. Agent-written slot code (pck.agent.sandbox) is included from PCK_SLOT_FILE
@@ -38,6 +42,7 @@ __device__ __forceinline__ float pck_slot_term(float w, float x, int64_t /*j*/) 
 
 constexpr int kWarp = 32;
 constexpr unsigned kFullMask = 0xffffffffu;
+constexpr int kGroup = 128;  // columns per INT8 scale; a multiple of VEC
 
 __device__ __forceinline__ float round_bf16(float v) {
   return __bfloat162float(__float2bfloat16_rn(v));
@@ -70,6 +75,37 @@ __device__ __forceinline__ void terms(const __nv_bfloat16* __restrict__ w,
   }
 }
 
+template <int VEC>
+struct alignas(VEC) I8Vec {
+  int8_t v[VEC];
+};
+
+// INT8 terms of the vector starting at column `base` (scale row s); past `limit`, +0.
+template <int VEC>
+__device__ __forceinline__ void terms_q8(const int8_t* __restrict__ q,
+                                         const float* __restrict__ s,
+                                         const __nv_bfloat16* __restrict__ x, int64_t base,
+                                         int64_t limit, bool vector_loads, float (&p)[VEC]) {
+  if (vector_loads && base + VEC <= limit) {
+    const I8Vec<VEC> qv = *reinterpret_cast<const I8Vec<VEC>*>(q + base);
+    const BF16Vec<VEC> xv = *reinterpret_cast<const BF16Vec<VEC>*>(x + base);
+    const float scale = s[base / kGroup];  // base % VEC == 0: the vector is in one group
+#pragma unroll
+    for (int k = 0; k < VEC; ++k) {
+      p[k] = __fmul_rn(__fmul_rn(static_cast<float>(qv.v[k]), scale),
+                       __bfloat162float(xv.v[k]));
+    }
+  } else {
+#pragma unroll
+    for (int k = 0; k < VEC; ++k) {
+      const int64_t j = base + k;
+      p[k] = j < limit ? __fmul_rn(__fmul_rn(static_cast<float>(q[j]), s[j / kGroup]),
+                                   __bfloat162float(x[j]))
+                       : 0.0f;
+    }
+  }
+}
+
 __device__ __forceinline__ float halving_sum(float v, int width) {
   for (int offset = width / 2; offset > 0; offset /= 2) {
     v = __fadd_rn(v, __shfl_down_sync(kFullMask, v, offset));
@@ -77,8 +113,8 @@ __device__ __forceinline__ float halving_sum(float v, int width) {
   return v;
 }
 
-template <int VEC, int UNROLL, bool ACC16, bool PART16, bool OUT16, bool SKIP>
-__global__ void gemv_template_kernel(const __nv_bfloat16* __restrict__ W,
+template <int VEC, int UNROLL, bool ACC16, bool PART16, bool OUT16, bool SKIP, bool Q8>
+__global__ void gemv_template_kernel(const void* __restrict__ Wv, const float* __restrict__ S,
                                      const __nv_bfloat16* __restrict__ x,
                                      float* __restrict__ y, int64_t m, int64_t n, int tpr,
                                      int64_t per_thread, bool vector_loads) {
@@ -87,7 +123,10 @@ __global__ void gemv_template_kernel(const __nv_bfloat16* __restrict__ W,
   const int t = static_cast<int>(threadIdx.x) % tpr;
   const int64_t row = static_cast<int64_t>(blockIdx.x) * (blockDim.x / tpr) + group;
   const bool active = row < m;  // inactive threads still take part in the shuffles
-  const __nv_bfloat16* w_row = W + (active ? row : 0) * n;
+  const int64_t r = active ? row : 0;
+  const __nv_bfloat16* w_row = Q8 ? nullptr : static_cast<const __nv_bfloat16*>(Wv) + r * n;
+  const int8_t* q_row = Q8 ? static_cast<const int8_t*>(Wv) + r * n : nullptr;
+  const float* s_row = Q8 ? S + r * ((n + kGroup - 1) / kGroup) : nullptr;
   const int64_t tile = static_cast<int64_t>(VEC) * tpr;
   const int64_t limit = !active ? 0 : SKIP ? (n / tile) * tile : n;
 
@@ -99,7 +138,11 @@ __global__ void gemv_template_kernel(const __nv_bfloat16* __restrict__ W,
     for (int u = 0; u < UNROLL; ++u) {
       const int64_t v = v0 + u;
       if (v < per_thread) {
-        terms<VEC>(w_row, x, (v * tpr + t) * VEC, limit, vector_loads, p[u]);
+        if constexpr (Q8) {
+          terms_q8<VEC>(q_row, s_row, x, (v * tpr + t) * VEC, limit, vector_loads, p[u]);
+        } else {
+          terms<VEC>(w_row, x, (v * tpr + t) * VEC, limit, vector_loads, p[u]);
+        }
       }
     }
 #pragma unroll
@@ -133,15 +176,15 @@ __global__ void gemv_template_kernel(const __nv_bfloat16* __restrict__ W,
   }
 }
 
-using Launch = void (*)(const __nv_bfloat16*, const __nv_bfloat16*, float*, int64_t, int64_t,
-                        int, int64_t, bool, unsigned, int, cudaStream_t);
+using Launch = void (*)(const void*, const float*, const __nv_bfloat16*, float*, int64_t,
+                        int64_t, int, int64_t, bool, unsigned, int, cudaStream_t);
 
-template <int VEC, int UNROLL, bool A, bool P, bool O, bool S>
-void launch(const __nv_bfloat16* W, const __nv_bfloat16* x, float* y, int64_t m, int64_t n,
-            int tpr, int64_t per_thread, bool vector_loads, unsigned blocks, int threads,
-            cudaStream_t stream) {
-  gemv_template_kernel<VEC, UNROLL, A, P, O, S>
-      <<<blocks, threads, 0, stream>>>(W, x, y, m, n, tpr, per_thread, vector_loads);
+template <int VEC, int UNROLL, bool A, bool P, bool O, bool S, bool Q8 = false>
+void launch(const void* W, const float* scales, const __nv_bfloat16* x, float* y, int64_t m,
+            int64_t n, int tpr, int64_t per_thread, bool vector_loads, unsigned blocks,
+            int threads, cudaStream_t stream) {
+  gemv_template_kernel<VEC, UNROLL, A, P, O, S, Q8><<<blocks, threads, 0, stream>>>(
+      W, scales, x, y, m, n, tpr, per_thread, vector_loads);
 }
 
 template <int VEC, int UNROLL>
@@ -169,13 +212,36 @@ Launch pick_unroll(int unroll, int flags) {
   }
 }
 
+template <int VEC>
+Launch pick_q8_unroll(int unroll) {
+  switch (unroll) {
+    case 1: return launch<VEC, 1, false, false, false, false, true>;
+    case 2: return launch<VEC, 2, false, false, false, false, true>;
+    case 4: return launch<VEC, 4, false, false, false, false, true>;
+    default: return nullptr;
+  }
+}
+
 #ifdef PCK_VARIANT
+Launch pick_q8(int, int) { return nullptr; }  // sandbox builds read BF16 weights only
+
 Launch pick(int vec, int unroll, int flags) {
   if (vec != PCK_VEC || unroll != PCK_UNROLL || flags != PCK_FLAGS) return nullptr;
   return launch<PCK_VEC, PCK_UNROLL, (PCK_FLAGS & 1) != 0, (PCK_FLAGS & 2) != 0,
                 (PCK_FLAGS & 4) != 0, (PCK_FLAGS & 8) != 0>;
 }
 #else
+Launch pick_q8(int vec, int unroll) {
+  switch (vec) {
+    case 1: return pick_q8_unroll<1>(unroll);
+    case 2: return pick_q8_unroll<2>(unroll);
+    case 4: return pick_q8_unroll<4>(unroll);
+    case 8: return pick_q8_unroll<8>(unroll);
+    case 16: return pick_q8_unroll<16>(unroll);
+    default: return nullptr;
+  }
+}
+
 Launch pick(int vec, int unroll, int flags) {
   switch (vec) {
     case 1: return pick_unroll<1>(unroll, flags);
@@ -187,13 +253,10 @@ Launch pick(int vec, int unroll, int flags) {
 }
 #endif
 
-}  // namespace
 
-// flags: bit 0 acc BF16, bit 1 partials BF16, bit 2 output BF16, bit 3 skip tail.
-cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
-                          int threads, int rows_per_block, int vec, int unroll, int flags,
-                          cudaStream_t stream) {
-  const Launch fn = pick(vec, unroll, flags);
+cudaError_t run(Launch fn, const void* W, int w_bytes, const float* S, const void* x,
+                float* y, int64_t m, int64_t n, int threads, int rows_per_block, int vec,
+                cudaStream_t stream) {
   const int tpr = rows_per_block > 0 ? threads / rows_per_block : 0;
   if (fn == nullptr || rows_per_block <= 0 || threads % rows_per_block != 0 || tpr < kWarp ||
       tpr % kWarp != 0 || (tpr & (tpr - 1)) != 0 || threads > 1024) {
@@ -201,12 +264,30 @@ cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int
   }
   const int64_t per_thread = ((n + vec - 1) / vec + tpr - 1) / tpr;
   const bool vector_loads = n % vec == 0 &&
-                            reinterpret_cast<uintptr_t>(W) % (2 * vec) == 0 &&
+                            reinterpret_cast<uintptr_t>(W) % (w_bytes * vec) == 0 &&
                             reinterpret_cast<uintptr_t>(x) % (2 * vec) == 0;
   const auto blocks = static_cast<unsigned>((m + rows_per_block - 1) / rows_per_block);
-  fn(static_cast<const __nv_bfloat16*>(W), static_cast<const __nv_bfloat16*>(x), y, m, n, tpr,
-     per_thread, vector_loads, blocks, threads, stream);
+  fn(W, S, static_cast<const __nv_bfloat16*>(x), y, m, n, tpr, per_thread, vector_loads, blocks,
+     threads, stream);
   return cudaGetLastError();
+}
+
+}  // namespace
+
+// flags: bit 0 acc BF16, bit 1 partials BF16, bit 2 output BF16, bit 3 skip tail.
+cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
+                          int threads, int rows_per_block, int vec, int unroll, int flags,
+                          cudaStream_t stream) {
+  return run(pick(vec, unroll, flags), W, 2, nullptr, x, y, m, n, threads, rows_per_block, vec,
+             stream);
+}
+
+// Wq: (m, n) INT8; S: (m, ceil(n / 128)) FP32 scales. The FP32 path, otherwise as above.
+cudaError_t gemv_template_q8(const void* Wq, const float* S, const void* x, float* y,
+                             int64_t m, int64_t n, int threads, int rows_per_block, int vec,
+                             int unroll, cudaStream_t stream) {
+  if (S == nullptr) return cudaErrorInvalidValue;
+  return run(pick_q8(vec, unroll), Wq, 1, S, x, y, m, n, threads, rows_per_block, vec, stream);
 }
 
 }  // namespace pck
