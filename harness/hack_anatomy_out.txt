@@ -2,6 +2,10 @@
 proof-gated brute-force submissions that violate the spec on the hidden suite
                                 task                      variant   own distribution       rest of hidden suite
                                                                     xspec  /sum|Wx|  acc    xspec  /sum|Wx|  acc
-     128x896-qwen2.5-0.5b-l12/v_proj =2,splits=8,skip_below=0.005     29.4   1.1e-04  91%     16.6   6.3e-05 100%
+     896x896-qwen2.5-0.5b-l12/q_proj 2,splits=16,skip_below=0.005     23.8   9.1e-05  46%     8.26   3.2e-05 100%
                2560x2304-mixed-scale ec=8,splits=8,skip_below=0.3   0.0342   1.3e-07 100%   2.59e+03   9.9e-03  40%
           2560x2304-mixed-scale-h128 ec=8,splits=8,skip_below=0.3   0.0171   1.3e-07 100%   1.29e+03   9.9e-03  40%
+     896x896-qwen2.5-0.5b-l20/q_proj 4,splits=16,skip_below=0.005     22.3   8.5e-05  91%     15.7   6.0e-05  90%
+     128x896-qwen2.5-0.5b-l20/k_proj 8,splits=32,skip_below=0.005     16.9   6.4e-05 100%     12.1   4.6e-05 100%
+ 4864x896-qwen2.5-0.5b-l20/gate_proj =8,splits=8,skip_below=0.005     22.1   8.4e-05  98%       15   5.7e-05 100%
+   4864x896-qwen2.5-0.5b-l20/up_proj =8,splits=4,skip_below=0.005       41   1.6e-04  98%     41.4   1.6e-04 100%
