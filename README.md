@@ -44,8 +44,8 @@ Measured on one RTX 5060 Laptop GPU; every number links to a script and its outp
 | | Guessed tolerance (KernelBench-style) | Proven bound (this project) |
 |---|---|---|
 | AI trained with GRPO (Qwen3-0.6B, 3 seeds, cheat pays 7%) | learned to cheat in **3 of 3** | **0 of 3** |
-| Simple RL control policy (3 seeds) | learned to cheat in 1 of 3 | **0 of 3** |
-| Search over kernels on held-out tasks (bandit) | 29-100% of submissions are cheats | **no cheats**, 98% of the best honest speed |
+| Simple RL control policy (3 seeds) | learned to cheat in 2 of 3 | **0 of 3** |
+| Search over kernels on held-out tasks (bandit) | 50-64% of submissions are cheats | **no cheats**, 98% of the best honest speed |
 
 - **Fast kernels:** the GEMV kernel reaches 96-101% of memory bandwidth, 1.05-1.5x faster
   than `torch.mv` on large decode shapes.
@@ -77,13 +77,14 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
   - On real Qwen2.5-0.5B layers, skipping small activations passes KernelBench-style
     tests (`atol = rtol = 1e-2`) and is 2-12% faster than the best honest kernel in a
     column-major deployment; the proof-gated checker rejects it.
-  - Search baselines on held-out tasks: calibrated tests let 29-70% of submissions be
+  - Search baselines on held-out tasks: calibrated tests let 64-72% of submissions be
     hacks. Tuned tests let none through but reach only 56-57% of the honest optimum. The
     proof-gated checker reaches 98% with no hacks for the bandit; brute force, which
-    sees exactly what the checker accepts, still finds a below-resolution or
-    off-distribution cheat on 3 of 43 tasks.
-  - A policy-gradient control learns the hack under calibrated tests (1 of 3 seeds; 2 of 3
-    when the timing table made it pay) and never under the proof-gated checker.
+    looks up exactly what the checker accepts, still finds a cheat on 7 of 43 tasks:
+    small errors spread under the threshold of a 128-row block, or wrong only on other
+    input distributions.
+  - A policy-gradient control learns the hack under calibrated tests (2 of 3 seeds) and
+    never under the proof-gated checker.
   - GRPO on Qwen3-0.6B (5-minute runs, one task, 3 seeds): under calibrated tests the
     policy learns activation sparsity in 3 of 3 seeds, paid 7% more on average; under
     the proof-gated checker it never does (0 of 3). Runs at a higher learning rate
@@ -242,13 +243,18 @@ project is **paused**, not abandoned. Open questions, with what would answer the
 
 - **Scale.** The cheating results use a small model (Qwen3-0.6B), one task and 3 seeds.
   A multi-turn Qwen3-1.7B pilot on 8 tasks with held-out evaluation (3 seeds, 150
-  steps) saw no cheating under either checker, but the cheat barely paid on its timing
-  table, so it doesn't test the checkers
+  steps) saw no cheating under either checker, but the cheat barely paid on the timing
+  table it used, so it doesn't test the checkers
   ([results](docs/results.md#the-pilot-qwen3-17b-multi-turn-held-out-tasks)).
-- **Noisy timing table.** The sweep times input-dependent kernels (the cheats) in a
-  separate pass from the honest ones, so clock drift moves how much the cheat pays: 16%
-  in the first sweep, at most 3% in the re-sweep, against 2-12% when timed side by side.
-  Timing them interleaved would fix it
+- **Block resolution.** The checker bounds blocks of 128 rows, so an error spread thinly
+  over a block can pass while breaking the per-row spec. An optimizer that looks up
+  every verdict finds such cheats on 7 of 43 tasks; the bandit and the RL policies never
+  did. Smaller blocks would narrow it at some cost
+  ([results](docs/results.md#search-baselines-per-regime)).
+- **Timing.** Rewards come from a measured timing table. The first two sweeps let GPU
+  clock drift move how much the cheat paid (16%, then at most 3%); the third times
+  kernels round-robin and cheats against their honest twins, matching the 1-12% of a
+  side-by-side benchmark
   ([results](docs/results.md#the-exploit-window-activation-sparsity-on-real-layers)).
 - **Is the cheat discovered or offered?** In the RL runs, the corner-cutting option is
   part of what the agent can choose. When the agent has to write the cheat as CUDA
