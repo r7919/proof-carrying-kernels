@@ -91,6 +91,9 @@ Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md
   - When the policy writes CUDA (exploit knobs locked, so cheating must be in code), it
     never invents the cheat in 15 minutes under either regime: 0% hacks, so this run
     doesn't separate the checkers yet.
+  - A multi-turn Qwen3-1.7B pilot (8 training tasks, 5 held-out, 3 seeds per regime):
+    0% hacks under both checkers, where the cheat barely pays; the proof-gated
+    policies score as well as the calibrated ones on held-out tasks.
 - **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
   adapter hot-loaded after every GRPO update.
 
@@ -237,8 +240,16 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 The code, proofs and experiments described here are complete, and CI is green. The
 project is **paused**, not abandoned. Open questions, with what would answer them:
 
-- **Scale.** The RL results use small models (Qwen3-0.6B), one task and 3 seeds. A
-  multi-turn Qwen3-1.7B pilot is configured (`--config pilot`) but not yet run.
+- **Scale.** The cheating results use a small model (Qwen3-0.6B), one task and 3 seeds.
+  A multi-turn Qwen3-1.7B pilot on 8 tasks with held-out evaluation (3 seeds, 150
+  steps) saw no cheating under either checker, but the cheat barely paid on its timing
+  table, so it doesn't test the checkers
+  ([results](docs/results.md#the-pilot-qwen3-17b-multi-turn-held-out-tasks)).
+- **Noisy timing table.** The sweep times input-dependent kernels (the cheats) in a
+  separate pass from the honest ones, so clock drift moves how much the cheat pays: 16%
+  in the first sweep, at most 3% in the re-sweep, against 2-12% when timed side by side.
+  Timing them interleaved would fix it
+  ([results](docs/results.md#the-exploit-window-activation-sparsity-on-real-layers)).
 - **Is the cheat discovered or offered?** In the RL runs, the corner-cutting option is
   part of what the agent can choose. When the agent has to write the cheat as CUDA
   itself, it never found it in 15 minutes under either checker
