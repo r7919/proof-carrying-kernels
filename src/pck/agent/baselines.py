@@ -48,7 +48,8 @@ def numerics_key(cfg: Config) -> Hashable:
     """Configs with equal keys compute bit-identical outputs."""
     if isinstance(cfg, ColumnConfig):
         return ("col", cfg.threads, cfg.splits, cfg.skip_below)
-    return ("row", cfg.threads_per_row, cfg.vec, cfg.acc, cfg.partials, cfg.out, cfg.skip_tail)
+    key = ("row", cfg.threads_per_row, cfg.vec, cfg.acc, cfg.partials, cfg.out, cfg.skip_tail)
+    return key if cfg.weights == "bf16" else (*key, cfg.weights)  # BF16 keys unchanged
 
 
 def allowed(locked: dict[str, object]) -> list[int]:
