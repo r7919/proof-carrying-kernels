@@ -165,6 +165,8 @@ def _source(cfg: Config, slot: str | None) -> tuple[str, str | None]:
             "}",
         ]
     else:
+        if cfg.weights != "bf16":
+            raise ValueError("live variants read BF16 weights; lock weights to bf16")
         flags = (
             (cfg.acc == "bf16")
             | (cfg.partials == "bf16") << 1

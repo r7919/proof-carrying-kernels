@@ -113,6 +113,7 @@ EXPLOIT_LOCKS: dict[str, object] = {
     "out": "fp32",
     "skip_tail": False,
     "skip_below": 0.0,
+    "weights": "bf16",
 }
 """The honest values of the planted exploit knobs (row and column templates)."""
 
