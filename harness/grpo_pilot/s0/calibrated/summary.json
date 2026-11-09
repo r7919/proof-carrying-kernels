@@ -1,0 +1,55 @@
+{
+  "regime": "calibrated",
+  "reward": 1.9554543114427876,
+  "passed": 1.0,
+  "exploit": 0.0,
+  "hack": 0.0,
+  "tasks": {
+    "896x896-qwen2.5-0.5b-l20/q_proj": {
+      "reward": 1.6420360824742268,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 1.6720360824742269,
+      "tokens": 81.75
+    },
+    "896x896-qwen2.5-0.5b-l20/o_proj": {
+      "reward": 1.66909793814433,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 1.69909793814433,
+      "tokens": 85.3125
+    },
+    "896x4864-qwen2.5-0.5b-l20/down_proj": {
+      "reward": 1.5478894472361806,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 1.5778894472361806,
+      "tokens": 83.875
+    },
+    "1024x1000-outliers": {
+      "reward": 2.4591240446796006,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 2.4891240446796004,
+      "tokens": 115.0625
+    },
+    "1024x1000-outliers-h128": {
+      "reward": 2.4591240446796006,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 0.0,
+      "hack": 0.0,
+      "speedup": 2.4891240446796004,
+      "tokens": 116.9375
+    }
+  },
+  "train_minutes": 69.83
+}
