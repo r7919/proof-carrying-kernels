@@ -17,7 +17,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 LAYERS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
-DEFAULT = "qwen2.5-0.5b-l12"
 HELD_OUT_PROMPTS = 2
 """The last prompts, whose activations only the hidden suite uses."""
 
