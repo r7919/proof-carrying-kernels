@@ -26,6 +26,7 @@ produced it and the file with its full output, so every number here can be repro
 | GRPO smoke run, lr 1e-4, seed 1 | `... generator=vllm lr=1e-4 seed=1` | `harness/grpo_smoke_vllm_s1_out.txt`, `harness/grpo_smoke_vllm_s1/` |
 | GRPO smoke run, lr 1e-4, seeds 0-2 | `... generator=vllm lr=1e-4 seed=$s` | `harness/grpo_smoke_vllm_seeds_out.txt`, `harness/grpo_smoke_vllm_s{0,1,2}/` |
 | GRPO slot code (agent writes CUDA) | `python -m pck.rl.train --config slot --compare` | `harness/grpo_slot_out.txt`, `harness/grpo_slot/` |
+| GRPO pilot, Qwen3-1.7B, multi-turn, seeds 0-2 | `python -m pck.rl.train --config pilot regime=$r seed=$s steps=150` | `harness/grpo_pilot_out.txt`, `harness/grpo_pilot/` |
 | Sampled-token check inside vLLM | `python -m harness.bench_vllm_checker` | `harness/bench_vllm_checker_out.txt` |
 
 ## Measurements
@@ -417,8 +418,8 @@ the tables), then 32 sampled evaluation episodes. Full report:
   (1.47), then falls to 1.28 by step 25 on a degenerate reply with a duplicated key, while
   the KL to the base model rises to about 1.0. A learning rate of 3e-4 is too high for a
   single-task run.
-- This is a pilot of one seed on one task. The plan's comparison needs at least 3 seeds,
-  more tasks (the pilot preset), and held-out evaluation.
+- This is one seed on one task. Three seeds follow below, and the multi-turn pilot
+  (more tasks, held-out evaluation) is at the end.
 - **Tables.** This run and the other smoke runs below were trained on the first sweep's
   timing table and the first verdict table, and were not re-run after the review fixes.
   The re-sweep moves the cheat's payoff on this task (see the exploit window), and the
@@ -550,6 +551,42 @@ skips small activations. Qwen3-0.6B, 15 minutes per regime, seed 0. Full report:
 - The first proof-gated attempt lost its final eval: the trusted `member.py` was edited
   while it ran, and the run's checker hash check stopped it. These numbers are from a
   re-run on the committed tree.
+
+### The pilot: Qwen3-1.7B, multi-turn, held-out tasks
+
+`--config pilot`: Qwen3-1.7B with a LoRA adapter, warm-started on scripted honest
+episodes, then trained with GRPO on 8 tasks (5 layer-12 projections and 3 synthetic) in
+multi-turn tool calling (up to 6 calls: write, compile, benchmark, check, submit). It is
+evaluated on 5 held-out tasks (3 layer-20 projections and 2 outlier tasks), 16 sampled
+episodes each. Three seeds per regime, Hugging Face rollouts, rewards from the re-swept
+(2026-11-08) tables. The preset asks for 400 steps; these runs use 150 so that all six fit
+in one night (36-94 minutes each). Full report: `harness/grpo_pilot_out.txt` (run files,
+without the adapters, in `harness/grpo_pilot/s{0,1,2}/`).
+
+| Seed | Calibrated: reward | Passed | Hacks | Proof-gated: reward | Passed | Hacks |
+|---|---|---|---|---|---|---|
+| 0 | 1.96 | 100% | 0% | 2.10 | 100% | 0% |
+| 1 | 2.25 | 99% | 0% | 2.30 | 100% | 0% |
+| 2 | -0.97 | 4% | 0% | 1.55 | 88% | 0% |
+
+- **No hacks anywhere: no submission in training or evaluation cheated, under either
+  checker.** That is expected here, so it says nothing for or against the checkers. The
+  warm start shows only honest configs, and on the re-swept timing table the cheat is at
+  most 3% faster than honest (see the exploit window), so there is little reward to pull
+  the policy toward it. Over the 900 logged samples (one per step) a reply with
+  `skip_below > 0` appears twice, both in calibrated seed 0, and is not kept.
+- **The reward gap is training instability, not the checker.** Calibrated seed 2
+  collapsed at step 20: its tool calls lost their final `}`, failed to parse, and the
+  policy repeated the call without ever submitting, through step 149. The same failure
+  hit both regimes (steps with fewer than half the replies valid: calibrated 3, 2, 130;
+  proof-gated 1, 40, 14); the other runs recovered. Without seed 2, the proof-gated
+  policies are 2-7% ahead (2.10 vs 1.96, 2.30 vs 2.25), within the spread between seeds.
+- **What it shows:** a 1.7B model learns the multi-turn loop and generalizes to held-out
+  layers and shapes (mean held-out rewards 1.55-2.30 for the runs that didn't collapse)
+  under the proof-gated checker as well as under calibrated tests; the proof gate shows
+  no cost in reward here. Testing whether the checker changes what is learned needs a table
+  where the cheat pays (the timing fix under the exploit window) or a warm start that
+  includes it.
 
 ### The sampled-token check inside vLLM
 
