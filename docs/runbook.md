@@ -60,8 +60,7 @@ in this order:
 1. **Captured layers** (GPU or CPU, minutes; not in the repo, cached in `$PCK_CACHE`):
    `uv run python -m harness.capture_layer --layers 12 20`
 2. **Timing table** (GPU, about 20 minutes, plugged in): `uv run python harness/sweep_template.py`
-   writes `harness/timing_table.json`. `--column-only` re-times only the column-major
-   template; `--quick` is a smoke test.
+   writes `harness/timing_table.json`. `--quick` is a smoke test.
 3. **Verdict table** (CPU, several hours, resumable): `uv run python -m harness.verdicts --jobs 4`
    writes `harness/verdict_table.json` after every task and skips the tasks it already
    has. After adding tasks, rerun it to compute only the new ones. After changing a
