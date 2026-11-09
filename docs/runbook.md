@@ -130,7 +130,8 @@ Knobs for a bigger run:
 | `env` | `table` | `emulator` or `cuda` | the table env is single-turn and config-only |
 | `turns` | 1 | 6 | multi-turn tool calling needs `env = emulator` or `cuda` |
 | `slot_code` | false | true | agent-written CUDA; needs `env = cuda` |
-| `warm_start_examples` | 0 | 256 | scripted honest demonstrations before GRPO |
+| `warm_start_examples` | 0 | 256 | scripted honest demonstrations before GRPO (exploit knobs left out) |
+| `free_layout` | false | true | real tasks may use the row-major template too, and with it INT8 weights |
 | `steps`, `time_limit_min` | 400, 4.5 | 400, none | |
 | `group`, `prompts_per_step` | 8, 2 | 4, 2 | trajectories per step = group x prompts |
 | `lora_rank`, `lr`, `kl` | 16, 3e-4, 0.01 | 32, 1e-4, 0.02 | |
