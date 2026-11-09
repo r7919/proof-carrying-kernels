@@ -3,7 +3,9 @@
 The result is the timing table that episodes serve config-only variants from, and also
 the brute-force baseline. Each variant is timed on a cold L2 (`ColdL2Timer`) against
 cuBLAS (`torch.mv`) in the same session. Variants whose speed does not depend on the input
-are timed once per shape; activation-sparsity variants (column-major, skip_below > 0) skip
+are timed once per shape, in rounds that run every one of them once (`round_robin`), so
+that the GPU heating up over the pass slows them all alike rather than the last ones in
+the config space; activation-sparsity variants (column-major, skip_below > 0) skip
 work depending on x, so they are timed per task on that task's fixed input (a captured
 activation for real tasks). Clock drift between those passes would move the skips against
 the honest kernels, so each skip variant is timed rep by rep interleaved with its sibling
@@ -67,6 +69,28 @@ def runner(
     return partial(gemv_template, W, x, cfg, q8)
 
 
+def round_robin(timer: ColdL2Timer, fns: list[Callable[[], object]]) -> list[float]:
+    """Median time (us) of each function on a cold L2, timed in ``timer.reps`` rounds that
+    run every function once, so that drift over the pass hits them all alike."""
+    for fn in fns:
+        for _ in range(timer.warmup):
+            fn()
+    times: list[list[float]] = [[] for _ in fns]
+    for _ in range(timer.reps):
+        events = []
+        for fn in fns:
+            start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+            timer.flush.zero_()
+            start.record()
+            fn()
+            end.record()
+            events.append((start, end))
+        torch.cuda.synchronize()
+        for t, (start, end) in zip(times, events, strict=True):
+            t.append(start.elapsed_time(end) * 1e3)
+    return [statistics.median(t) for t in times]
+
+
 def paired_ratio(timer: ColdL2Timer, fn: Callable[[], object], ref: Callable[[], object]) -> float:
     """Median time of ``fn`` over that of ``ref``, timed rep by rep interleaved on a cold
     L2, so that clock drift hits both alike."""
@@ -121,12 +145,21 @@ def main() -> None:
     shape_times: dict[tuple[int, int], list[float]] = {}
 
     def time_fixed(
-        c: Config, W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor, q8: Q8, key: str
-    ) -> float:
-        """Time of an input-independent variant (reused from --out if --column-only)."""
-        if old is not None and not isinstance(c, ColumnConfig):
-            return old.times[key][config_index(c)]
-        return timer(runner(c, W, WT, x, q8)).median_ms * 1e3
+        W: torch.Tensor, WT: torch.Tensor, x: torch.Tensor, q8: Q8, key: str
+    ) -> list[float]:
+        """Times of the input-independent variants (NaN for the others), in one round-robin
+        pass; with --column-only, the row-major ones are reused from --out."""
+        out = [float("nan")] * len(space)
+        todo = [i for i, c in enumerate(space) if not depends_on_x(c)]
+        if old is not None:
+            for i in todo:
+                if not isinstance(space[i], ColumnConfig):
+                    out[i] = old.times[key][i]
+            todo = [i for i in todo if isinstance(space[i], ColumnConfig)]
+        times = round_robin(timer, [runner(space[i], W, WT, x, q8) for i in todo])
+        for i, t in zip(todo, times, strict=True):
+            out[i] = t
+        return out
 
     print(f"device: {torch.cuda.get_device_name()}; {len(space)} configs x {len(tasks)} tasks")
     print(
@@ -143,10 +176,7 @@ def main() -> None:
         base = timer(partial(torch.mv, W, x)).median_ms * 1e3
         shape = (task.m, task.n)
         if shape not in shape_times:
-            shape_times[shape] = [
-                float("nan") if depends_on_x(c) else time_fixed(c, W, WT, x, q8, task.key)
-                for c in space
-            ]
+            shape_times[shape] = time_fixed(W, WT, x, q8, task.key)
         fixed = shape_times[shape]
         times = list(fixed)
         for i, c in enumerate(space):
