@@ -34,6 +34,30 @@ def gemv_coalesced(W: torch.Tensor, x: torch.Tensor, threads: int = 256) -> torc
     return y
 
 
+FP8_MAX = 448.0
+"""Largest finite FP8 E4M3 value."""
+
+
+def quantize_fp8(W: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """FP8 weights for :func:`gemv_fp8`: (Q, s) with Q in float8_e4m3fn, shape (m, n), and
+    s FP32 of shape (m,), so W ~ s[:, None] * Q (one scale per row, max |w| / 448; an
+    all-zero row gets scale 1)."""
+    amax = W.abs().amax(dim=1).float()
+    s = torch.where(amax > 0, amax / FP8_MAX, torch.ones_like(amax))
+    Q = (W.float() / s[:, None]).clamp(-FP8_MAX, FP8_MAX).to(torch.float8_e4m3fn)
+    return Q.contiguous(), s
+
+
+def gemv_fp8(Q: torch.Tensor, x: torch.Tensor, threads: int = 256) -> torch.Tensor:
+    """z = Q x for FP8 E4M3 weights ``Q`` (m, n) and BF16 ``x``: FP32 accumulation and
+    output, 16 weights per 16-byte load. Each FP8 x BF16 product is exact in FP32, so z
+    matches :func:`pck.gemv.emulate_gemv_coalesced` with ``vec=16`` bit for bit, and the
+    trusted checker verifies it against Q (FP8 values are exact in BF16). The row
+    scales of `quantize_fp8` are applied afterwards: y = s * z."""
+    z: torch.Tensor = extension().gemv_fp8(Q, x, threads)
+    return z
+
+
 def template_flags(cfg: KernelConfig) -> int:
     """The template kernel's exploit flags for ``cfg``."""
     return (
