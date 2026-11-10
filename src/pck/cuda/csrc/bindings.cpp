@@ -17,6 +17,8 @@ cudaError_t gemv_bf16_naive(const void* W, const void* x, float* y, int64_t m, i
                             int threads, cudaStream_t stream);
 cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
                                 int threads, cudaStream_t stream);
+cudaError_t gemv_fp8_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
+                               int threads, cudaStream_t stream);
 cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
                           int threads, int rows_per_block, int vec, int unroll, int flags,
                           cudaStream_t stream);
@@ -42,11 +44,12 @@ using Launcher = std::function<cudaError_t(const void*, const void*, float*, int
                                            int, cudaStream_t)>;
 
 torch::Tensor launch_gemv(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
-                          int64_t min_threads, const Launcher& launcher) {
+                          int64_t min_threads, const Launcher& launcher,
+                          torch::ScalarType w_type = torch::kBFloat16) {
   TORCH_CHECK(W.is_cuda() && x.is_cuda(), "W and x must be CUDA tensors");
   TORCH_CHECK(W.device() == x.device(), "W and x must be on the same device");
-  TORCH_CHECK(W.scalar_type() == torch::kBFloat16 && x.scalar_type() == torch::kBFloat16,
-              "W and x must be bfloat16");
+  TORCH_CHECK(W.scalar_type() == w_type && x.scalar_type() == torch::kBFloat16,
+              "W must be ", w_type, " and x bfloat16");
   TORCH_CHECK(W.dim() == 2 && x.dim() == 1 && x.size(0) == W.size(1),
               "expected W of shape (m, n) and x of shape (n,), got ", W.sizes(), " and ",
               x.sizes());
@@ -74,6 +77,10 @@ torch::Tensor gemv_naive(const torch::Tensor& W, const torch::Tensor& x, int64_t
 
 torch::Tensor gemv_coalesced(const torch::Tensor& W, const torch::Tensor& x, int64_t threads) {
   return launch_gemv(W, x, threads, 32, pck::gemv_bf16_coalesced);
+}
+
+torch::Tensor gemv_fp8(const torch::Tensor& Q, const torch::Tensor& x, int64_t threads) {
+  return launch_gemv(Q, x, threads, 32, pck::gemv_fp8_coalesced, torch::kFloat8_e4m3fn);
 }
 
 torch::Tensor gemv_template(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
@@ -304,6 +311,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("gemv_coalesced",
         &gemv_coalesced, "Coalesced BF16 GEMV with 16-byte loads and warp-shuffle reduction",
         pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"));
+  m.def("gemv_fp8", &gemv_fp8,
+        "Coalesced GEMV over FP8 E4M3 weights (16 per load), BF16 x, FP32 accumulation",
+        pybind11::arg("Q"), pybind11::arg("x"), pybind11::arg("threads"));
   m.def("gemv_template", &gemv_template,
         "The agent's GEMV template; flags: 1 acc BF16, 2 partials BF16, 4 output BF16, "
         "8 skip tail",
