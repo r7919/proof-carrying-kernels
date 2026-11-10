@@ -1,6 +1,6 @@
 # uv run python harness/bench_gemv.py
-# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04
-device: NVIDIA GeForce RTX 5060 Laptop GPU, L2 32 MiB
+# RTX 5060 (driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04
+device: NVIDIA GeForce RTX 5060, L2 32 MiB
 measured copy bandwidth: 338 GB/s (= 100% below)
 times: median ms [p10, p90], cold L2; 'vs cuBLAS' > 1 means faster
        m x n         kernel            ms [p10, p90]   GB/s  %copy vs cuBLAS

@@ -1,7 +1,7 @@
 # uv run python harness/bench_sampling.py
-# RTX 5060 Laptop GPU (WSL2, driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-08
+# RTX 5060 (driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-08
 # Segmented checker; top-p terms with split-argument FP32 expf (FP64 sums).
-device: NVIDIA GeForce RTX 5060 Laptop GPU; V = 151936, k = 50, p = 0.9
+device: NVIDIA GeForce RTX 5060; V = 151936, k = 50, p = 0.9
 batch                   step  median ms   p90 ms
     1          top-k sampler     0.4183   0.5204
     1          top-k checker     0.0253   0.0270

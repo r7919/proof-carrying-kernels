@@ -1,4 +1,4 @@
-# uv run python -m harness.bench_vllm_checker   (RTX 5060 Laptop GPU, vLLM 0.33, 2026-11-08)
+# uv run python -m harness.bench_vllm_checker   (RTX 5060, vLLM 0.33, 2026-11-08)
 Qwen/Qwen3-0.6B: 16 concurrent requests x 256 tokens x 3 rounds; top-k 50, top-p 0.9, temperature 0.8
    mode  tokens/s   cost  checked rejected injected  caught false alarms   max r-p
     off      2790   0.0%        0        0        0       0            0       nan

@@ -1,4 +1,4 @@
-# for s in 0 1 2; uv run python -m pck.rl.train --config pilot regime={calibrated,proof-gated} seed=$s steps=150; then uv run python -m harness.grpo_report harness/grpo_pilot/s*/*   (RTX 5060 Laptop GPU, HF generator, tables from the 2026-11-08 sweep, 2026-11-08/09)
+# for s in 0 1 2; uv run python -m pck.rl.train --config pilot regime={calibrated,proof-gated} seed=$s steps=150; then uv run python -m harness.grpo_report harness/grpo_pilot/s*/*   (RTX 5060, HF generator, tables from the 2026-11-08 sweep, 2026-11-08/09)
 == harness/grpo_pilot/s0/calibrated: Qwen/Qwen3-1.7B, calibrated, tasks 896x896-qwen2.5-0.5b-l12/q_proj, 896x896-qwen2.5-0.5b-l12/o_proj, 128x896-qwen2.5-0.5b-l12/k_proj, 4864x896-qwen2.5-0.5b-l12/gate_proj, 896x4864-qwen2.5-0.5b-l12/down_proj, 896x896-gauss, 1536x1536-student-t, 896x896-gauss-h32
    lr 0.0001, kl 0.02, group 4 x 2, max_new_tokens 256, 150 steps in 4070 s
    step   0    29s  reward  1.017  valid 100%  passed 100%  exploit   0%  hacks   0%  kl 0.277

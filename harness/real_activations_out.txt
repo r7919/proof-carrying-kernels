@@ -1,5 +1,5 @@
 # uv run python -m harness.real_activations   (download progress lines removed)
-# RTX 5060 Laptop GPU (WSL2), Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2 inputs per layer and prompt, 2026-11-04
+# RTX 5060, Qwen/Qwen2.5-0.5B-Instruct in BF16, 4 prompts x 16 tokens, 2 inputs per layer and prompt, 2026-11-04
 model: Qwen/Qwen2.5-0.5B-Instruct; decode-step inputs, batch 1; coalesced kernel (256 threads)
 
 Per-row tightness, proven bound / actual error

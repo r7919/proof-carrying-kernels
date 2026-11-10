@@ -1,6 +1,6 @@
 # Results
 
-All GPU numbers are from one RTX 5060 Laptop GPU (Blackwell, 8 GB, WSL2, driver 617.42,
+All GPU numbers are from one RTX 5060 (Blackwell, 8 GB, WSL2, driver 617.42,
 CUDA 12.8, PyTorch 2.11) on a cold L2 unless noted. Each section names the script that
 produced it and the file with its full output, so every number here can be reproduced.
 
@@ -48,7 +48,7 @@ Zero false alarms in 12,800 block checks, for about 3.1% extra memory traffic.
 
 ### GEMV benchmark
 
-RTX 5060 Laptop GPU, cold L2, median of 200 runs, as a share of measured device copy
+RTX 5060, cold L2, median of 200 runs, as a share of measured device copy
 bandwidth (338 GB/s). Full output: `harness/bench_gemv_out.txt`.
 
 | m x n | torch.mv (cuBLAS) | naive | coalesced/256 | coalesced vs torch.mv |
@@ -64,7 +64,7 @@ read-plus-write copy bandwidth. Below about 2048 x 2048, launch latency dominate
 ### Checker overhead on a decode layer
 
 One Llama-3-8B decode layer at batch 1 (fused qkv, o, gate_up, down: 416 MiB of BF16
-weights), RTX 5060 Laptop GPU, cold L2, K = 1. Full output: `harness/bench_decode_layer_out.txt`.
+weights), RTX 5060, cold L2, K = 1. Full output: `harness/bench_decode_layer_out.txt`.
 
 | Mode | b = 64 | b = 128 |
 |---|---|---|

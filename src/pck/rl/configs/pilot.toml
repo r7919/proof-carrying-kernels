@@ -5,7 +5,7 @@
 # - env = "table": tool answers from the verdict and timing tables (`TableEpisode`); the
 #   faithful but much slower alternative is env = "emulator" (CPU-model episodes).
 # - generator = "hf": 1.7B weights do not fit twice in 8 GB (trainer plus a vLLM server).
-#   On a bigger GPU add generator=vllm; for a quick trial on the laptop use
+#   On a bigger GPU add generator=vllm; for a quick trial on the RTX 5060 use
 #   model=Qwen/Qwen3-0.6B generator=vllm steps=40.
 # - Each episode's group runs in lockstep (one batched generation per turn).
 name = "pilot"

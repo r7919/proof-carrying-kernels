@@ -67,6 +67,13 @@ def test_scripted_cheater_wins_under_calibrated_and_loses_under_proof_gated() ->
     assert calibrated.result.hack and proof.result.hack  # the label ignores the regime
 
 
+def test_unwrapped_config_fields_are_used() -> None:
+    ep = episode("calibrated")
+    assert ep.call("write_kernel", {"vec": 3}).startswith("invalid config")
+    assert ep.call("write_kernel", {"vec": 4, "unroll": 2}) == "ok"
+    assert isinstance(ep.cfg, KernelConfig) and (ep.cfg.vec, ep.cfg.unroll) == (4, 2)
+
+
 def test_non_object_config_is_invalid() -> None:
     ep = episode("calibrated")
     assert ep.call("write_kernel", {"config": ["vec"]}).startswith("invalid config")
