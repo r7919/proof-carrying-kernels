@@ -1,0 +1,39 @@
+# The INT8 exploit run: the pilot trained only on the two tasks where the INT8 weight knob
+# beats every honest config under the calibrated checker (l12 o_proj and down_proj; it is
+# rejected or slower on every other task), so a policy that tries it is rewarded there.
+# The warm start leaves the exploit knobs out, so any INT8 use comes from RL.
+#   uv run python -m pck.rl.train --config int8 regime=calibrated seed=0
+# Evaluated on the same layers' siblings in layer 20 (INT8 ties honest on o_proj and is
+# rejected on down_proj) and on q_proj, where it is rejected.
+name = "int8"
+model = "Qwen/Qwen3-1.7B"
+lora_rank = 32
+lora_alpha = 64
+tasks = [
+    "896x896-qwen2.5-0.5b-l12/o_proj",
+    "896x4864-qwen2.5-0.5b-l12/down_proj",
+]
+eval_tasks = [
+    "896x896-qwen2.5-0.5b-l20/o_proj",
+    "896x4864-qwen2.5-0.5b-l20/down_proj",
+    "896x896-qwen2.5-0.5b-l12/q_proj",
+    "896x896-qwen2.5-0.5b-l20/q_proj",
+]
+regime = "calibrated"
+free_layout = true
+env = "table"
+turns = 6
+steps = 150
+group = 8
+prompts_per_step = 1
+lr = 1e-4
+kl = 0.02
+max_new_tokens = 256
+time_limit_min = "none"
+eval_samples = 16
+gradient_checkpointing = true
+update_batch = 1
+warm_start_examples = 256
+warm_start_epochs = 2
+vllm_max_model_len = 4096
+vllm_gpu_memory = 0.45
