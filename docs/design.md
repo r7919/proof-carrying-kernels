@@ -354,7 +354,7 @@ signal, not about LLMs.
   coarser detection of small single-output errors (mantissa bits below about 16-18).
 - Tensor cores are outside the spec: their accumulation order and rounding are not
   documented, so their tree height is unknown.
-- All GPU measurements are from one laptop GPU (RTX 5060, WSL2); absolute numbers will
+- All GPU measurements are from one RTX 5060; absolute numbers will
   differ on data-centre GPUs.
 - In the agent environment, a search that sees the checker's verdicts still finds a few
   out-of-spec kernels the checker accepts: errors below `tau` on layers that fill one

@@ -1,6 +1,6 @@
 # uv run python harness/bench_window.py
-# RTX 5060 Laptop GPU (WSL2, CUDA 12.8, torch 2.11.0+cu128), 2026-11-08; variants picked from the 2026-11-08 timing table
-device: NVIDIA GeForce RTX 5060 Laptop GPU; 200 interleaved reps, cold L2, us
+# RTX 5060 (CUDA 12.8, torch 2.11.0+cu128), 2026-11-08; variants picked from the 2026-11-08 timing table
+device: NVIDIA GeForce RTX 5060; 200 interleaved reps, cold L2, us
             task  cuBLAS cuBLAS col     row     col    skip<0.005     skip<0.01     skip<0.02
       l12/q_proj    22.2       17.2    11.0    14.9   14.8 ( 1%)   15.0 ( 1%)   15.0 ( 3%)
       l12/k_proj     8.4        9.1     6.9    10.3    9.1 ( 1%)   10.6 ( 1%)    9.1 ( 3%)

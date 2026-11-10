@@ -1,5 +1,5 @@
-# uv run python harness/sweep_template.py   (RTX 5060 Laptop GPU, 2026-11-09; round-robin per shape, skips paired with their siblings)
-device: NVIDIA GeForce RTX 5060 Laptop GPU; 2949 configs x 43 tasks
+# uv run python harness/sweep_template.py   (RTX 5060, 2026-11-09; round-robin per shape, skips paired with their siblings)
+device: NVIDIA GeForce RTX 5060; 2949 configs x 43 tasks
                                 task  cuBLAS  honest  h. col    int8 skip<0.005  skip<0.01  skip<0.02  skip<0.05   (us; skip columns: fastest variant at that threshold, share skipped)
                        896x896-gauss    22.6    11.0    15.1     9.5   15.0  1%   14.9  1%   15.1  1%   15.0  4%
                    896x896-student-t    22.4    11.0    15.1     9.5   15.3  1%   15.1  1%   15.3  2%   14.3  4%

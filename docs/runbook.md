@@ -15,7 +15,7 @@ the pieces guarantee see [design.md](design.md); for the measured numbers see
 | RL training | `uv sync --extra rl` (includes `gpu` and `models`) | |
 | Lean proofs | `cd lean && lake exe cache get && lake build && lake env lean scripts/Axioms.lean` | elan |
 
-Machine-specific notes, all seen on the RTX 5060 laptop (Ubuntu under WSL2):
+Machine-specific notes, all seen on the RTX 5060:
 
 - **Host compiler.** CUDA 12.8 supports GCC up to 14. If a build fails in a host header,
   install `g++-14` and set `NVCC_CCBIN=g++-14`; nvcc reads it, so this covers the torch

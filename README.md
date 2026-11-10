@@ -38,7 +38,7 @@ adversarial, and only the small checker has to be trusted.
 
 ## Key results
 
-Measured on one RTX 5060 Laptop GPU; every number links to a script and its output in
+Measured on one RTX 5060; every number links to a script and its output in
 [docs/results.md](docs/results.md).
 
 | | Guessed tolerance (KernelBench-style) | Proven bound (this project) |
@@ -58,7 +58,7 @@ Measured on one RTX 5060 Laptop GPU; every number links to a script and its outp
 <details>
 <summary><b>All headline measurements</b></summary>
 
-Measured on an RTX 5060 Laptop GPU; details in [docs/results.md](docs/results.md).
+Measured on an RTX 5060; details in [docs/results.md](docs/results.md).
 
 - **GEMV kernel** at 96-101% of copy bandwidth, 1.05-1.5x faster than `torch.mv` on large
   decode shapes, and bit-identical to its CPU model.

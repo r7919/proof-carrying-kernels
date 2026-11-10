@@ -1,6 +1,6 @@
 # uv run python harness/bench_batched.py
-# RTX 5060 Laptop GPU (WSL2, CUDA 12.8, torch 2.11.0+cu128), 2026-11-04; cold L2, 100 reps
-device: NVIDIA GeForce RTX 5060 Laptop GPU; 256 threads, times in us (median)
+# RTX 5060 (CUDA 12.8, torch 2.11.0+cu128), 2026-11-04; cold L2, 100 reps
+device: NVIDIA GeForce RTX 5060; 256 threads, times in us (median)
       shape  B   cuBLAS  fp32 mul+add      fp32 fma    bf16x2 fma  bf16 in 1e-2  bf16 > bound
   896x896    1     22.1          14.7          13.6          13.2        100.0%         99.7%
   896x896    2     18.8          16.8          16.7          17.7        100.0%         99.7%

@@ -228,7 +228,10 @@ class Episode:
         self.calls += 1
         args = dict(args or {})
         if name == "write_kernel":
-            out = self._write_kernel(args.get("config", {}), args.get("slot_code"))
+            # Fields written straight into args, without the "config" wrapper, are the
+            # config (otherwise they would be dropped silently and the defaults built).
+            flat = {k: v for k, v in args.items() if k != "slot_code"}
+            out = self._write_kernel(args.get("config", flat), args.get("slot_code"))
         elif name == "compile":
             out = self._compile()
         elif name == "benchmark":
