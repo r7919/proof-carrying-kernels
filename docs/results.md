@@ -9,6 +9,7 @@ produced it and the file with its full output, so every number here can be repro
 | Numerics study (CPU) | `harness/numerics_sim.py` | `harness/sim_out.txt` |
 | GEMV kernels vs cuBLAS | `harness/bench_gemv.py` | `harness/bench_gemv_out.txt` |
 | Checker overhead, decode layer | `harness/bench_decode_layer.py` | `harness/bench_decode_layer_out.txt` |
+| FP8 weights: GEMV and checker overhead | `harness/bench_fp8.py` | `harness/bench_fp8_out.txt` |
 | False alarms and bit flips | `harness/campaign.py` | `harness/campaign_out.txt` |
 | Sampling checker cost | `harness/bench_sampling.py` | `harness/bench_sampling_out.txt` |
 | Tightness, synthetic activations (CPU) | `harness/tightness.py` | `harness/tightness_out.txt` |
@@ -77,6 +78,35 @@ Zero false alarms in every mode. At b = 128 the batched checker meets the Phase 
 under 5%. At b = 64 its memory traffic alone is 4.7%, and the single launch adds about
 1.3%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
 GPU, so the checker has nothing to overlap with and only adds cross-stream latency.
+
+### FP8 weights
+
+The FP8 kernel (`pck.cuda.gemv_fp8`) reads weights stored in FP8 E4M3, one byte each,
+16 per 16-byte load, with one FP32 scale per row applied after the GEMV. An E4M3 value
+has 4 significand bits and a BF16 activation 8, so every product is exact in FP32, as for
+BF16 weights. The kernel matches its CPU model bit for bit (every finite E4M3 value,
+subnormals included), and the trusted checker verifies z = Q x against the FP8 weights Q,
+which are exact in BF16. No new proof is needed. Cold L2, median of 200 runs. Full
+output: `harness/bench_fp8_out.txt`.
+
+| m x n | BF16 kernel | FP8 kernel | FP8, share of copy bandwidth | FP8 vs BF16 | FP8 vs torch.mv (BF16) |
+|---|---|---|---|---|---|
+| 896 x 4864 | 33.0 us | 22.9 us | 56% | 1.44x | 2.31x |
+| 4096 x 4096 | 104 us | 54 us | 92% | 1.93x | 2.42x |
+| 14336 x 4096 | 342 us | 177 us | 98% | 1.93x | 2.04x |
+| 4096 x 14336 | 348 us | 179 us | 97% | 1.94x | 2.04x |
+
+On large shapes the FP8 kernel runs at 92-98% of copy bandwidth, close to the 2x that
+halving the weight bytes allows. On small shapes launch latency dominates; at 896 x 896
+it is 9% slower than the BF16 kernel.
+
+A fused Llama-3-8B decode layer runs in 0.641 ms with FP8 weights against 1.255 ms with
+BF16 (1.96x), and every check passes. The checker costs the same as for BF16 weights,
+but the GEMVs now take half as long, so the batched checker's overhead rises from 3.9%
+to **8.7%** at b = 128, above the 5% budget. At b = 256 it is 5.4%, at half the
+detection resolution. The quantization error itself (FP8 against the BF16 weights,
+2.6-2.7% relative on these Gaussian weights) is a property of the format; the checker
+bounds the kernel's rounding, not the choice to quantize.
 
 ### False alarms and bit-flip detection on the GPU
 

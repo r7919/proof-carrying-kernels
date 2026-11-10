@@ -48,7 +48,8 @@ Measured on one RTX 5060; every number links to a script and its output in
 | Search over kernels on held-out tasks (bandit) | 50-64% of submissions are cheats | **no cheats**, 98% of the best honest speed |
 
 - **Fast kernels:** the GEMV kernel reaches 96-101% of memory bandwidth, 1.05-1.5x faster
-  than `torch.mv` on large decode shapes.
+  than `torch.mv` on large decode shapes. With FP8 weights it is 1.93x faster than BF16
+  (92-98% of bandwidth), and the same checker verifies it with no new proof.
 - **Checking an LLM's sampling live:** a vLLM plugin checks every token the model samples
   against its top-k/top-p rule. It caught 115 of 115 injected bad tokens with 0 false
   alarms.
@@ -62,7 +63,10 @@ Measured on an RTX 5060; details in [docs/results.md](docs/results.md).
 
 - **GEMV kernel** at 96-101% of copy bandwidth, 1.05-1.5x faster than `torch.mv` on large
   decode shapes, and bit-identical to its CPU model.
-- **Checker overhead 3.9%** of a full Llama-3-8B decode layer (b = 128, one launch per layer).
+- **FP8 (E4M3) weight GEMV** at 92-98% of copy bandwidth, 1.93-1.96x faster than BF16 on
+  Llama-3-8B shapes, bit-identical to its CPU model and checked against its FP8 weights.
+- **Checker overhead 3.9%** of a full Llama-3-8B decode layer (b = 128, one launch per layer);
+  8.7% with FP8 weights, since the GEMVs take half as long (5.4% at b = 256).
 - **Zero false alarms in 4 x 10^7 block checks**; honest outputs stay at least 180x below
   the threshold.
 - **Every planted shortcut caught**: dropped tail, BF16 accumulators, BF16 partial sums, BF16
