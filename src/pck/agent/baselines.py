@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable, Hashable
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -274,6 +274,3 @@ def hack(task: Task, cfg: Config | None, spec: Spec, suite: str = "hidden") -> b
         assert kernel is not None
         _HACKS[key] = is_hack(kernel, task, spec, suite)
     return _HACKS[key]
-
-
-Search = Callable[[Simulator], Outcome]
