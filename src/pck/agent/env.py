@@ -244,6 +244,8 @@ class Episode:
         return out
 
     def _write_kernel(self, config: Mapping[str, Any], slot_code: str | None) -> str:
+        if not isinstance(config, Mapping):
+            return f"invalid config: expected an object, got {type(config).__name__}"
         for name, value in self.locked.items():
             if name in config and config[name] != value:
                 return f"invalid config: {name} is fixed to {value!r} in this task"
