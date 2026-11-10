@@ -1,0 +1,17 @@
+# uv run python harness/bench_fp8.py   (b = 128; at --block 256 the layer's checker overhead is 5.4%)
+# RTX 5060 (driver 617.42, CUDA 12.8, torch 2.11.0+cu128), 2026-11-10
+device: NVIDIA GeForce RTX 5060; copy bandwidth 338 GB/s
+part 1: GEMV, median ms on a cold L2; %copy = share of measured copy bandwidth
+       m x n  cuBLAS bf16  ours bf16  ours fp8 fp8 %copy fp8 vs bf16 fp8 vs cuBLAS quant err
+   896 x 896       0.0223     0.0133    0.0147       16%       0.91x         1.52x     2.72%
+  896 x 4864       0.0528     0.0330    0.0229       56%       1.44x         2.31x     2.71%
+ 2048 x 2048       0.0430     0.0293    0.0246       51%       1.19x         1.75x     2.62%
+ 4096 x 4096       0.1301     0.1036    0.0538       92%       1.93x         2.42x     2.60%
+14336 x 4096       0.3610     0.3420    0.1771       98%       1.93x         2.04x     2.65%
+4096 x 14336       0.3652     0.3483    0.1792       97%       1.94x         2.04x     2.69%
+
+part 2: fused Llama-3-8B decode layer (4 GEMVs), b = 128, K = 1, cold L2
+all checks pass on FP8 outputs: True
+  BF16 GEMVs           1.2546 ms
+  FP8 GEMVs            0.6413 ms   (1.96x faster than BF16)
+  FP8 GEMVs + checks   0.6970 ms   (checker overhead 8.7%)
