@@ -262,10 +262,11 @@ by a stated assumption in [design.md](design.md#assumed-not-proven).
 
 ## Known gaps and future work
 
-- **Batch 1-8 and FP8 tasks** (in the plan's task distribution). They need a batched
+- **Batch 1-8 and FP8 tasks** (in the plan's task distribution). Batch needs a batched
   template, which can reuse the per-column summation tree so that the CPU model and
   checker apply column by column, plus a GPU sweep. Precision shortcuts were measured not
-  to pay up to batch 8 (`harness/bench_batched.py`).
+  to pay up to batch 8 (`harness/bench_batched.py`). The FP8 kernel exists and is checked
+  (`gemv_fp8`, `harness/bench_fp8.py`), but no agent task uses FP8 weights yet.
 - **Sampling tasks in the agent environment.** The top-k and top-p checkers exist and are
   proven, but no agent task uses them yet.
 - **Tensor cores** are outside the spec: their accumulation order and rounding are not

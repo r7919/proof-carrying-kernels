@@ -326,6 +326,11 @@ signal, not about LLMs.
 - **b = 128 by default.** The checker's traffic is `(2K + 1) / b` of the GEMV's; at b = 64
   that alone is 4.7%, too close to the 5% budget. b = 64 stays available at about 2x finer
   detection.
+- **FP8 weights need no new proof.** An E4M3 weight has 4 significand bits, so its
+  product with a BF16 activation is exact in FP32, as T1 assumes for BF16. The FP8 kernel
+  computes z = Q x on the stored FP8 values and the checker verifies it against Q
+  (converted to BF16, exactly); the per-row scale is applied after the check, like the
+  trusted BF16 downcast. Its summation tree is the coalesced kernel's with vectors of 16.
 - **BF16 `a`, rounded up.** Halves the bound's traffic for at most 0.8% looser `tau`.
 - **FP32 `expf` in the top-p checker.** Each term's argument is split into an FP32 part
   and a first-order correction, so the error stays near 6 u32 for every argument (an FP32
