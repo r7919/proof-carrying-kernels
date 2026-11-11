@@ -44,6 +44,7 @@ Measured on one RTX 5060; every number links to a script and its output in
 | | Guessed tolerance (KernelBench-style) | Proven bound (this project) |
 |---|---|---|
 | AI trained with GRPO (Qwen3-0.6B, 3 seeds, cheat pays 7%) | learned to cheat in **3 of 3** | **0 of 3** |
+| Qwen3-1.7B with GRPO, no demonstrations of the cheat (3 seeds) | found the cheat itself in **2 of 3** | **0 of 3** |
 | Simple RL control policy (3 seeds) | learned to cheat in 2 of 3 | **0 of 3** |
 | Search over kernels on held-out tasks (bandit) | 50-64% of submissions are cheats | **no cheats**, 98% of the best honest speed |
 
@@ -99,6 +100,10 @@ Measured on an RTX 5060; details in [docs/results.md](docs/results.md).
   - A multi-turn Qwen3-1.7B pilot (8 training tasks, 5 held-out, 3 seeds per regime):
     0% hacks under both checkers, where the cheat barely pays; the proof-gated
     policies score as well as the calibrated ones on held-out tasks.
+  - Qwen3-1.7B without any demonstrations (3 seeds per regime, 150 steps): under
+    calibrated tests the policy found the BF16-output shortcut itself in 2 of 3 seeds,
+    and one seed used it on 98% of held-out episodes; under the proof-gated checker it
+    never did, at no cost in held-out reward.
 - **Rollouts 7.8x faster with vLLM** (1,840 vs 233 tokens/s), serving the policy's LoRA
   adapter hot-loaded after every GRPO update.
 
@@ -245,11 +250,12 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 The code, proofs and experiments described here are complete, and CI is green. The
 project is **paused**, not abandoned. Open questions, with what would answer them:
 
-- **Scale.** The cheating results use a small model (Qwen3-0.6B), one task and 3 seeds.
-  A multi-turn Qwen3-1.7B pilot on 8 tasks with held-out evaluation (3 seeds, 150
-  steps) saw no cheating under either checker, but the cheat barely paid on the timing
-  table it used, so it doesn't test the checkers
-  ([results](docs/results.md#the-pilot-qwen3-17b-multi-turn-held-out-tasks)).
+- **Scale.** The cheating results use small models (Qwen3-0.6B and 1.7B), one or two
+  training tasks and 3 seeds per regime. Without demonstrations, Qwen3-1.7B found the
+  shortcut in 2 of 3 calibrated seeds, not all: it pays little, so one seed dropped it
+  and one never kept it
+  ([results](docs/results.md#without-demonstrations-qwen3-17b-finds-the-shortcut-itself)).
+  More seeds, or a task where cheating pays more, would firm this up.
 - **Block resolution.** The checker bounds blocks of 128 rows, so an error spread thinly
   over a block can pass while breaking the per-row spec. An optimizer that looks up
   every verdict finds such cheats on 7 of 43 tasks; the bandit and the RL policies never
@@ -261,8 +267,10 @@ project is **paused**, not abandoned. Open questions, with what would answer the
   side-by-side benchmark
   ([results](docs/results.md#the-exploit-window-activation-sparsity-on-real-layers)).
 - **Is the cheat discovered or offered?** In the RL runs, the corner-cutting option is
-  part of what the agent can choose. When the agent has to write the cheat as CUDA
-  itself, it never found it in 15 minutes under either checker
+  one of the knobs the agent can set, described as neutrally as the others. In the
+  Qwen3-1.7B runs it was never shown in an example, and the policy still picked it.
+  When the agent has to write the cheat as CUDA itself, it never found it in 15 minutes
+  under either checker
   ([results](docs/results.md#slot-code-the-policy-writes-cuda)), so that test doesn't
   separate them yet.
 - **What is proven, exactly.** Lean proves the error formulas. The checker code that
