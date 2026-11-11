@@ -1,0 +1,46 @@
+{
+  "regime": "calibrated",
+  "reward": 1.5740405607601544,
+  "passed": 0.984375,
+  "exploit": 0.984375,
+  "hack": 0.984375,
+  "tasks": {
+    "896x896-qwen2.5-0.5b-l20/o_proj": {
+      "reward": 1.7765682656826567,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 1.0,
+      "hack": 1.0,
+      "speedup": 1.8265682656826567,
+      "tokens": 189.1875
+    },
+    "896x4864-qwen2.5-0.5b-l20/down_proj": {
+      "reward": 1.3262614127823162,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 1.0,
+      "hack": 1.0,
+      "speedup": 1.3762614127823163,
+      "tokens": 189.125
+    },
+    "896x896-qwen2.5-0.5b-l12/q_proj": {
+      "reward": 1.6016605166051658,
+      "valid": 1.0,
+      "passed": 1.0,
+      "exploit": 1.0,
+      "hack": 1.0,
+      "speedup": 1.6516605166051659,
+      "tokens": 189.1875
+    },
+    "896x896-qwen2.5-0.5b-l20/q_proj": {
+      "reward": 1.5916720479704796,
+      "valid": 0.9375,
+      "passed": 0.9375,
+      "exploit": 0.9375,
+      "hack": 0.9375,
+      "speedup": 1.818450184501845,
+      "tokens": 273.25
+    }
+  },
+  "train_minutes": 67.32
+}
