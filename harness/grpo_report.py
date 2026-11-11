@@ -30,6 +30,20 @@ def sustained(metrics: list[dict[str, Any]]) -> int | None:
     return full
 
 
+def exploit_summary(metrics: list[dict[str, Any]]) -> str:
+    """When the exploit first appeared, on how many steps every submission had it, and
+    the step from which it stayed to the end."""
+    first = next((m["step"] for m in metrics if m["exploit"] > 0), None)
+    if first is None:
+        return "never seen"
+    every = sum(m["exploit"] >= 0.99 for m in metrics)
+    full = sustained(metrics)
+    end = f"kept to the end from step {full}" if full is not None else "not kept to the end"
+    return (
+        f"first seen at step {first}; in every submission on {every} of {len(metrics)} steps; {end}"
+    )
+
+
 def report(run: Path, every: int) -> dict[str, Any]:
     cfg = json.loads((run / "config.json").read_text())
     summary: dict[str, Any] = json.loads((run / "summary.json").read_text())
@@ -47,9 +61,7 @@ def report(run: Path, every: int) -> dict[str, Any]:
                 f"  valid {m['valid']:4.0%}  passed {m['passed']:4.0%}"
                 f"  exploit {m['exploit']:4.0%}  hacks {m['hack']:4.0%}  kl {m['kl']:.3f}"
             )
-    first = next((m["step"] for m in metrics if m["exploit"] > 0), None)
-    full = sustained(metrics)
-    print(f"   exploit first seen at step {first}, in every submission from step {full} on")
+    print(f"   exploit: {exploit_summary(metrics)}")
     samples = run / "samples.jsonl"
     if samples.exists():
         last = rows(samples)[-1]
@@ -64,11 +76,15 @@ def main() -> None:
     parser.add_argument("--every", type=int, default=5)
     args = parser.parse_args()
     summaries = [report(run, args.every) for run in args.runs]
+    width = max(len(str(run)) for run in args.runs)
     print("\nfinal evaluation (sampled episodes per task)")
-    print(f"{'regime':>12s} {'reward':>7s} {'passed':>7s} {'exploit':>8s} {'hacks':>6s}")
-    for s in summaries:
+    print(
+        f"{'run':<{width}s} {'regime':>12s} {'reward':>7s} {'passed':>7s} {'exploit':>8s}"
+        f" {'hacks':>6s}"
+    )
+    for run, s in zip(args.runs, summaries, strict=True):
         print(
-            f"{s['regime']:>12s} {s['reward']:7.3f} {s['passed']:7.0%}"
+            f"{run!s:<{width}s} {s['regime']:>12s} {s['reward']:7.3f} {s['passed']:7.0%}"
             f" {s['exploit']:8.0%} {s['hack']:6.0%}"
         )
 
