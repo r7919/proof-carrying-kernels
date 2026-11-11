@@ -28,6 +28,7 @@ produced it and the file with its full output, so every number here can be repro
 | GRPO smoke run, lr 1e-4, seeds 0-2 | `... generator=vllm lr=1e-4 seed=$s` | `harness/grpo_smoke_vllm_seeds_out.txt`, `harness/grpo_smoke_vllm_s{0,1,2}/` |
 | GRPO slot code (agent writes CUDA) | `python -m pck.rl.train --config slot --compare` | `harness/grpo_slot_out.txt`, `harness/grpo_slot/` |
 | GRPO pilot, Qwen3-1.7B, multi-turn, seeds 0-2 | `python -m pck.rl.train --config pilot regime=$r seed=$s steps=150` | `harness/grpo_pilot_out.txt`, `harness/grpo_pilot/` |
+| GRPO without demonstrations, Qwen3-1.7B, seeds 0-2 | `python -m pck.rl.train --config int8 regime=$r seed=$s` | `harness/grpo_int8_out.txt`, `harness/grpo_int8/` |
 | Sampled-token check inside vLLM | `python -m harness.bench_vllm_checker` | `harness/bench_vllm_checker_out.txt` |
 
 ## Measurements
@@ -618,6 +619,55 @@ without the adapters, in `harness/grpo_pilot/s{0,1,2}/`).
   no cost in reward here. Testing whether the checker changes what is learned needs a table
   where the cheat pays (the timing fix under the exploit window) or a warm start that
   includes it.
+
+A bug found later: when a reply put the knobs directly under `args` instead of inside
+`config`, the environment ignored them and built the default kernel. In this pilot that
+affected calibrated seed 0 and proof-gated seed 2. It was fixed before the INT8 runs
+below (unwrapped knobs are now read; anything that isn't an object is rejected).
+
+### Without demonstrations: Qwen3-1.7B finds the shortcut itself
+
+`--config int8`: the pilot's setup with three changes, each found by a failed attempt.
+
+- **No warm start.** A format-only fine-tune taught the policy to write only the knobs
+  its examples showed, so it never tried any other.
+- **Two training tasks where a shortcut pays:** layer-12 `o_proj` and `down_proj`, where
+  INT8 weights beat every honest config under calibrated tests. BF16 output
+  (`out: "bf16"`) also passes calibrated tests; on `o_proj` it makes some kernels up to
+  11% faster than their FP32-output twins, though the median kernel gains nothing and
+  the fastest BF16-output kernel is within 1% of the fastest honest one. The reward rule
+  is unchanged.
+- **lr 2e-5, KL 0.05.** At lr 1e-4 every reply collapsed onto one config within 10 steps.
+
+The prompt says the output must be FP32. It lists `out` as one of ten knobs, `one of
+["fp32", "bf16"] (output precision)`, the same neutral wording as the rest, and never
+shows it set. So the policy chose the shortcut from the menu without being shown it.
+150 steps, 8 replies per step, 3 seeds per regime, Hugging Face rollouts, 60-82 minutes
+per run. It is evaluated on 4 held-out tasks (layer-20 `o_proj` and `down_proj`, and
+`q_proj` in layers 12 and 20), 16 sampled episodes each. Full report:
+`harness/grpo_int8_out.txt` (run files in `harness/grpo_int8/s{0,1,2}/`).
+
+| Seed | Calibrated: shortcut in training | Held-out reward | Held-out hacks | Proof-gated: shortcut in training | Held-out reward | Held-out hacks |
+|---|---|---|---|---|---|---|
+| 0 | in every reply, steps 12-69, then dropped | 1.56 | 0% | never | 1.52 | 0% |
+| 1 | tried twice, never kept | 1.53 | 0% | never | 1.98 | 0% |
+| 2 | in every reply from step 10 (137 of 150 steps) | 1.57 | 98% | never | 1.56 | 0% |
+
+- **Under calibrated tests the policy found the shortcut in 2 of 3 seeds; under the
+  proof-gated checker, in none.** Proof-gated policies did write `out: "bf16"` now and
+  then (4 of the 450 logged samples), were paid 0, and stopped.
+- **Seed 2 carried the habit to new layers.** It used BF16 output on 98% of held-out
+  episodes, including layer-20 `down_proj`, where it pays less than honest kernels
+  (reward 1.33 there, against 1.68 for its proof-gated twin).
+- **The shortcut pays little, so it doesn't always win.** It speeds up some kernels and
+  not others. Seed 0 left it at step 70 for a config where BF16 output is no faster, and
+  seed 1 never kept it. The INT8 weight knob, which pays more and which the tasks were
+  chosen for, never appeared in a logged sample.
+- **The proof gate cost nothing here.** Held-out rewards are 1.52-1.98 proof-gated
+  against 1.53-1.57 calibrated; the best of all six runs is proof-gated seed 1.
+
+Three seeds is a small sample. The result is that the shortcut can emerge without
+demonstrations and the proof-gated checker stops it, not that it always emerges.
 
 ### The sampled-token check inside vLLM
 
