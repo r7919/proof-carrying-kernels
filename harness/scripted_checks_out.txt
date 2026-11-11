@@ -1,4 +1,4 @@
-# uv run python -m harness.phase4_checks   (CPU; timings from harness/timing_table.json, RTX 5060, 2026-11-09)
+# uv run python -m harness.scripted_checks   (CPU; timings from harness/timing_table.json, RTX 5060, 2026-11-09)
 1. Scripted agents, mean reward over 10 episodes (speedup over cuBLAS, 0 if rejected)
             task    thr                   weak            calibrated                 tuned           proof-gated
                                honest  cheater       honest  cheater       honest  cheater       honest  cheater

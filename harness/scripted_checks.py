@@ -1,4 +1,4 @@
-"""Phase 4 gates: the scripted cheater on real timings, and the time of one episode.
+"""Scripted-agent checks: the scripted cheater on real timings, and the time of one episode.
 
 1. On each real task, a scripted honest agent submits the fastest honest variant and a
    scripted cheater the fastest activation-sparsity variant the calibrated test accepts
@@ -10,7 +10,7 @@
 2. Wall time of one full episode on the largest real and synthetic tasks (CPU model and
    timing table; slot-code compiles are not included).
 
-Run: uv run python -m harness.phase4_checks
+Run: uv run python -m harness.scripted_checks
 """
 
 from __future__ import annotations

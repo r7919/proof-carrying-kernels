@@ -57,7 +57,7 @@ def test_honest_kernel_is_paid_its_speedup_in_every_regime(regime: RegimeName) -
 
 
 def test_scripted_cheater_wins_under_calibrated_and_loses_under_proof_gated() -> None:
-    """The Phase 4 sanity check, on the CPU model with synthetic timings."""
+    """The scripted-cheater sanity check, on the CPU model with synthetic timings."""
     calibrated, proof = episode("calibrated"), episode("proof-gated")
     play(calibrated, CHEAT)
     play(proof, CHEAT)

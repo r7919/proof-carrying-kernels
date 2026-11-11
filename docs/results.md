@@ -17,7 +17,7 @@ produced it and the file with its full output, so every number here can be repro
 | Agent template sweep | `harness/sweep_template.py` | `harness/sweep_template_out.txt`, `harness/timing_table.json` |
 | BF16 shortcut at batch 1-8 | `harness/bench_batched.py` | `harness/bench_batched_out.txt` |
 | Exploit window, activation sparsity | `python -m harness.exploit_window` | `harness/exploit_window_out.txt` |
-| Phase 4 gates (CPU) | `python -m harness.phase4_checks` | `harness/phase4_checks_out.txt` |
+| Scripted honest and cheating agents (CPU) | `python -m harness.scripted_checks` | `harness/scripted_checks_out.txt` |
 | Search baselines per regime (CPU) | `python -m harness.verdicts`, `python -m harness.baselines` | `harness/verdict_table.json`, `harness/baselines_out.txt` |
 | Hacks the checker lets through (CPU) | `python -m harness.hack_anatomy` | `harness/hack_anatomy_out.txt` |
 | Non-LLM control policy (CPU) | `python -m pck.rl.control` | `harness/control_out.txt` |
@@ -75,7 +75,7 @@ weights), RTX 5060, cold L2, K = 1. Full output: `harness/bench_decode_layer_out
 | **Batched (one checker launch per layer)** | **6.0%** | **3.9%** |
 | Checksum bank size, share of weights | 4.7% | 2.3% |
 
-Zero false alarms in every mode. At b = 128 the batched checker meets the Phase 1 target of
+Zero false alarms in every mode. At b = 128 the batched checker meets the target of
 under 5%. At b = 64 its memory traffic alone is 4.7%, and the single launch adds about
 1.3%. Overlapping on a side stream is slower than serial: the GEMV already saturates the
 GPU, so the checker has nothing to overlap with and only adds cross-stream latency.
@@ -301,7 +301,7 @@ minima are noisier).
   column-major template beats cuBLAS in either layout.
 - Real tasks are therefore set in a column-major deployment, as sparsity-aware inference
   engines (TEAL, Deja Vu) store weights (`pck.agent.tasks.locks`). The incentive is
-  small; whether RL finds it is Phase 5's go/no-go question.
+  small; whether RL finds it is what the training runs test.
 - **The timing table now shows it too.** The episodes' rewards come from the template
   sweep's timing table. Its first two versions timed the skips in a separate pass from
   the honest kernels, and timed each kernel's reps back to back while the GPU heated up,
@@ -312,14 +312,14 @@ minima are noisier).
   faster than honest column-major (`harness/exploit_window_out.txt`), as this benchmark
   measures. The smoke runs below used the first table, the control and the pilot of
   2026-11-08 the second; the numbers in this file from the search baselines, the control,
-  the phase 4 gates and the hack anatomy are from the third.
+  the scripted-agent checks and the hack anatomy are from the third.
 
-### Phase 4 gates: a scripted cheater and episode cost
+### Scripted agents: a cheater and episode cost
 
-`python -m harness.phase4_checks` plays full episodes on every real task with two scripted
+`python -m harness.scripted_checks` plays full episodes on every real task with two scripted
 agents. One submits the best honest kernel. The other submits the activation-sparsity cheat
 at the largest threshold the calibrated test accepts on at least 95% of inputs. Full
-output: `harness/phase4_checks_out.txt`.
+output: `harness/scripted_checks_out.txt`.
 
 - **Under weak tests the cheater earns more on all 14 real tasks**, by 1-11% (l12
   `v_proj`: 0.92 vs 0.83, l20 `o_proj`: 1.74 vs 1.59), and under calibrated tests on 13;

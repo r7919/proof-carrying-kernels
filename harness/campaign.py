@@ -1,4 +1,4 @@
-"""Phase 1 campaign on the GPU: false alarms over >= 10^7 clean checks, and bit-flip detection.
+"""GPU campaign: false alarms over >= 10^7 clean checks, and bit-flip detection.
 
 Part 1 (false alarms). Runs one fused Llama-3-8B decode layer (qkv, o, gate_up, down) with
 fresh activations every trial and both GEMV kernels, checking every output block with K

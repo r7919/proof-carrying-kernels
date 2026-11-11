@@ -11,7 +11,7 @@ seven. This times the whole layer four ways, on a cold L2:
                   runs while the next GEMV does; the layer ends when the last check ends
   batched         all GEMVs, then one checker launch for the whole layer (check_many)
 
-The Phase 1 gate is overhead < 5% at the chosen block size b.
+The target is overhead < 5% at the chosen block size b.
 
 Run: uv run python harness/bench_decode_layer.py [--block 64]   (default b = 128)
 """

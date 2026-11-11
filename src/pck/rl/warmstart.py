@@ -1,6 +1,6 @@
 """Warm start: a short supervised fine-tune on correct episodes before GRPO.
 
-The plan's warm start teaches the policy the reply format so that RL starts from kernels
+The warm start teaches the policy the reply format so that RL starts from kernels
 that compile. The demonstrations come from a scripted agent, with no frontier-model API:
   single-turn  the prompt, then a random honest config as compact JSON;
   multi-turn   write_kernel(random honest config), compile, benchmark, run_checker,

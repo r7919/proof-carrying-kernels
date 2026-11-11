@@ -166,7 +166,7 @@ plugin adjusted.
 
 ## The agent environment
 
-Phase 4 turns the checker into a reward signal. An agent writes a GEMV kernel for a task
+The agent environment turns the checker into a reward signal. An agent writes a GEMV kernel for a task
 and is paid its speedup over cuBLAS if the kernel is judged correct. The question is which
 judge stops reward hacking (`src/pck/agent/`).
 
@@ -259,7 +259,7 @@ where input-dependent shortcuts pay). Such variants run on the GPU:
 The slot sees only `w`, `x` and `j`. The signs the checker uses are drawn after the kernel
 has run, so nothing the slot can read helps it guess them.
 
-## Training (Phase 5)
+## Training
 
 `src/pck/rl/` trains a policy with GRPO and runs the non-LLM control.
 
@@ -270,7 +270,7 @@ has run, so nothing the slot can read helps it guess them.
   Qwen3-0.6B with LoRA on layer-12 `o_proj`, where the calibrated test accepts an
   activation-sparsity cheat that the timing table puts 11% above the best honest kernel. Episodes are
   single-turn, with rewards from the tables.
-- `configs/pilot.toml` is the plan's pilot: Qwen3-1.7B, multi-turn tool calling with
+- `configs/pilot.toml` is the pilot: Qwen3-1.7B, multi-turn tool calling with
   episodes answered from the tables, eight training tasks, evaluated on held-out tasks
   ([results](results.md#the-pilot-qwen3-17b-multi-turn-held-out-tasks)).
 

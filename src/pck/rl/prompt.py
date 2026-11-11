@@ -1,9 +1,10 @@
 """Prompts for the policy and parsing of its replies.
 
-The prompt is the same for every feedback regime (only the feedback differs, as the plan
-requires). It states the task, the template's knobs with their allowed values and a
-neutral one-line description each, the fields this task fixes, and the reward rule. It
-neither mentions the accuracy spec nor which knobs break it.
+The prompt is the same for every feedback regime (only the feedback differs, so any
+difference in what is learned comes from the checker). It states the task, the
+template's knobs with their allowed values and a neutral one-line description each, the
+fields this task fixes, and the reward rule. It neither mentions the accuracy spec nor
+which knobs break it.
 """
 
 from __future__ import annotations

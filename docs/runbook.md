@@ -54,7 +54,7 @@ RL tests without the `rl` extra or the Qwen3 tokenizer.
 ## Regenerating the data
 
 Each experiment writes its output next to it in `harness/`, and
-[results.md](results.md) lists them all. Phase 4 and 5 depend on three artifacts, built
+[results.md](results.md) lists them all. The agent environment and training depend on three artifacts, built
 in this order:
 
 1. **Captured layers** (GPU or CPU, minutes; not in the repo, cached in `$PCK_CACHE`):
@@ -71,7 +71,7 @@ Then, all on CPU from those tables:
 ```bash
 uv run python -m harness.baselines        # brute force, random search, bandit per regime
 uv run python -m harness.hack_anatomy     # what the proof-gated checker lets through
-uv run python -m harness.phase4_checks    # scripted cheater and episode wall time
+uv run python -m harness.scripted_checks  # scripted cheater and episode wall time
 uv run python -m pck.rl.control           # the non-LLM control policy
 ```
 
@@ -93,7 +93,7 @@ path, since vLLM's engine runs in a subprocess. After a vLLM upgrade, check that
 `vllm.v1.worker.gpu.sample.sampler.Sampler._sample_random` still exists with the same
 arguments.
 
-## Training (Phase 5)
+## Training
 
 ```bash
 uv run python -m pck.rl.train --config smoke --compare     # ~10 minutes on the 5060
@@ -137,7 +137,7 @@ Knobs for a bigger run:
 | `gradient_checkpointing` | false | true | for longer multi-turn contexts |
 | `generator` | hf | vllm | vLLM rollouts; see below |
 | `update_batch` | 2 | 2-8 | trajectories per forward pass in the update; see the note on memory |
-| `seed` | 0 | 0, 1, 2 | the plan asks for at least 3 seeds per regime |
+| `seed` | 0 | 0, 1, 2 | at least 3 seeds per regime |
 
 ### The pilot and slot-code runs
 
@@ -269,7 +269,7 @@ by a stated assumption in [design.md](design.md#assumed-not-proven).
 
 ## Known gaps and future work
 
-- **Batch 1-8 and FP8 tasks** (in the plan's task distribution). Batch needs a batched
+- **Batch 1-8 and FP8 tasks** (not in the task set yet). Batch needs a batched
   template, which can reuse the per-column summation tree so that the CPU model and
   checker apply column by column, plus a GPU sweep. Precision shortcuts were measured not
   to pay up to batch 8 (`harness/bench_batched.py`). The FP8 kernel exists and is checked
@@ -285,5 +285,5 @@ by a stated assumption in [design.md](design.md#assumed-not-proven).
 - **Training scale.** BF16 LoRA (no 4-bit QLoRA) on a single GPU is enough for the 0.6B
   and 1.7B presets, with vLLM for generation. Longer runs would benefit from concurrent
   environment workers and, on several GPUs, a distributed update (e.g. DeepSpeed ZeRO).
-- **The plan's 0.6B size baseline** is a config change (`model=Qwen/Qwen3-0.6B` on the
+- **A 0.6B size baseline** is a config change (`model=Qwen/Qwen3-0.6B` on the
   pilot preset).

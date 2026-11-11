@@ -1,4 +1,4 @@
-# The plan's pilot: Qwen3-1.7B, multi-turn tool calling (up to 6 calls per episode), eight
+# The pilot: Qwen3-1.7B, multi-turn tool calling (up to 6 calls per episode), eight
 # training tasks, evaluated on held-out tasks (layer 20, outliers, an unseen error budget).
 # Sized for the 8 GB RTX 5060, overnight per regime and seed:
 #   uv run python -m pck.rl.train --config pilot --compare seed=0
