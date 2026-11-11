@@ -30,7 +30,7 @@ from pck.cuda import (
     gemv_fp8,
     quantize_fp8,
 )
-from pck.cuda.timing import ColdL2Timer, copy_bandwidth_gbps
+from pck.cuda.timing import ColdL2Timer, copy_bandwidth_gbps, device_name
 from pck.fp import tree_height
 
 THREADS = 256
@@ -101,7 +101,7 @@ def main() -> None:
     gen = torch.Generator().manual_seed(0)
     timer = ColdL2Timer(20, args.reps)
     copy_bw = copy_bandwidth_gbps(timer)
-    print(f"device: {torch.cuda.get_device_name()}; copy bandwidth {copy_bw:.0f} GB/s")
+    print(f"device: {device_name()}; copy bandwidth {copy_bw:.0f} GB/s")
     per_shape(timer, copy_bw, gen)
     layer(timer, args.block, gen)
 

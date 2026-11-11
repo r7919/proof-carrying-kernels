@@ -19,6 +19,7 @@ pck_sampling_check = "pck.vllm_plugin:register"
 
 [dependency-groups]
 dev = [
+    "clang-format>=21",
     "hypothesis>=6.100",
     "ml-dtypes>=0.5",
     "mypy>=1.10",

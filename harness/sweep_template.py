@@ -49,7 +49,7 @@ from pck.agent.spec import Spec, static_check
 from pck.agent.task import Task
 from pck.agent.tasks import ALL
 from pck.cuda import gemv_column, gemv_template, row_q8
-from pck.cuda.timing import ColdL2Timer
+from pck.cuda.timing import ColdL2Timer, device_name
 
 OUT = Path(__file__).parent / "timing_table.json"
 WINDOW = (0.005, 0.01, 0.02, 0.05)
@@ -147,7 +147,7 @@ def main() -> None:
             out[i] = t
         return out
 
-    print(f"device: {torch.cuda.get_device_name()}; {len(space)} configs x {len(tasks)} tasks")
+    print(f"device: {device_name()}; {len(space)} configs x {len(tasks)} tasks")
     print(
         f"{'task':>36s} {'cuBLAS':>7s} {'honest':>7s} {'h. col':>7s}"
         + f" {'int8':>7s}"

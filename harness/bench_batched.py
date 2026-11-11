@@ -21,7 +21,7 @@ from typing import Any
 
 import torch
 
-from pck.cuda.timing import ColdL2Timer
+from pck.cuda.timing import ColdL2Timer, device_name
 from pck.fp import gamma, tree_height
 
 SHAPES = [(896, 896), (4096, 4096), (14336, 4096), (4096, 14336)]
@@ -46,7 +46,7 @@ def variants() -> Any:
 def main() -> None:
     timer = ColdL2Timer(10, 100)
     torch.manual_seed(0)
-    print(f"device: {torch.cuda.get_device_name()}; {THREADS} threads, times in us (median)")
+    print(f"device: {device_name()}; {THREADS} threads, times in us (median)")
     print(
         f"{'shape':>11s} {'B':>2s} {'cuBLAS':>8s}"
         + "".join(f"{v:>14s}" for v in MODES.values())

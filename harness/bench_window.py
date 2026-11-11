@@ -28,6 +28,7 @@ from pck.agent.env import TimingTable
 from pck.agent.spec import Spec, static_check
 from pck.agent.tasks import REAL_HELD_OUT, REAL_TRAIN
 from pck.cuda import gemv_column, gemv_template
+from pck.cuda.timing import device_name
 
 TABLE = Path(__file__).parent / "timing_table.json"
 THRESHOLDS = (0.005, 0.01, 0.02)
@@ -66,7 +67,7 @@ def main() -> None:
     spec = Spec()
     l2 = int(getattr(torch.cuda.get_device_properties(0), "L2_cache_size", 64 << 20))
     flush = torch.empty(2 * max(l2, 1 << 20), dtype=torch.uint8, device="cuda")
-    print(f"device: {torch.cuda.get_device_name()}; {args.reps} interleaved reps, cold L2, us")
+    print(f"device: {device_name()}; {args.reps} interleaved reps, cold L2, us")
     head = "".join(f"{f'skip<{t}':>14s}" for t in THRESHOLDS)
     print(f"{'task':>16s} {'cuBLAS':>7s} {'cuBLAS col':>10s} {'row':>7s} {'col':>7s}{head}")
     for task in REAL_TRAIN + REAL_HELD_OUT:

@@ -92,17 +92,26 @@ void launch_b(int mode, const __nv_bfloat16* W, const __nv_bfloat16* X, float* Y
 
 }  // namespace
 
-cudaError_t batched_gemv(int mode, const void* W, const void* X, float* Y, int64_t m,
-                         int64_t n, int64_t batch, int threads, cudaStream_t s) {
+cudaError_t batched_gemv(int mode, const void* W, const void* X, float* Y, int64_t m, int64_t n,
+                         int64_t batch, int threads, cudaStream_t s) {
   const auto* w = static_cast<const __nv_bfloat16*>(W);
   const auto* x = static_cast<const __nv_bfloat16*>(X);
   if (mode < 0 || mode > 2 || n % kVec != 0) return cudaErrorInvalidValue;
   switch (batch) {
-    case 1: launch_b<1>(mode, w, x, Y, m, n, threads, s); break;
-    case 2: launch_b<2>(mode, w, x, Y, m, n, threads, s); break;
-    case 4: launch_b<4>(mode, w, x, Y, m, n, threads, s); break;
-    case 8: launch_b<8>(mode, w, x, Y, m, n, threads, s); break;
-    default: return cudaErrorInvalidValue;
+    case 1:
+      launch_b<1>(mode, w, x, Y, m, n, threads, s);
+      break;
+    case 2:
+      launch_b<2>(mode, w, x, Y, m, n, threads, s);
+      break;
+    case 4:
+      launch_b<4>(mode, w, x, Y, m, n, threads, s);
+      break;
+    case 8:
+      launch_b<8>(mode, w, x, Y, m, n, threads, s);
+      break;
+    default:
+      return cudaErrorInvalidValue;
   }
   return cudaGetLastError();
 }

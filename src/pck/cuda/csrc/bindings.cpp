@@ -4,13 +4,13 @@
 #include <c10/cuda/CUDAStream.h>
 #include <torch/extension.h>
 
-#include "checker.h"
-
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <tuple>
 #include <vector>
+
+#include "checker.h"
 
 namespace pck {
 cudaError_t gemv_bf16_naive(const void* W, const void* x, float* y, int64_t m, int64_t n,
@@ -19,16 +19,15 @@ cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t 
                                 int threads, cudaStream_t stream);
 cudaError_t gemv_fp8_coalesced(const void* W, const void* x, float* y, int64_t m, int64_t n,
                                int threads, cudaStream_t stream);
-cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n,
-                          int threads, int rows_per_block, int vec, int unroll, int flags,
-                          cudaStream_t stream);
-cudaError_t gemv_template_q8(const void* Wq, const float* S, const void* x, float* y,
-                             int64_t m, int64_t n, int threads, int rows_per_block, int vec,
-                             int unroll, cudaStream_t stream);
+cudaError_t gemv_template(const void* W, const void* x, float* y, int64_t m, int64_t n, int threads,
+                          int rows_per_block, int vec, int unroll, int flags, cudaStream_t stream);
+cudaError_t gemv_template_q8(const void* Wq, const float* S, const void* x, float* y, int64_t m,
+                             int64_t n, int threads, int rows_per_block, int vec, int unroll,
+                             cudaStream_t stream);
 int64_t column_tiles(int64_t m, int vec);
-cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch,
-                        unsigned* tickets, int64_t m, int64_t n, int threads, int vec,
-                        int splits, float skip_below, cudaStream_t stream);
+cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch, unsigned* tickets,
+                        int64_t m, int64_t n, int threads, int vec, int splits, float skip_below,
+                        cudaStream_t stream);
 int64_t sampling_scratch_words(int64_t vocab);
 int64_t sampling_partial_bytes();
 cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_t* len,
@@ -40,16 +39,16 @@ cudaError_t sampling_check(const float* logits, const int64_t* sel, const int64_
 
 namespace {
 
-using Launcher = std::function<cudaError_t(const void*, const void*, float*, int64_t, int64_t,
-                                           int, cudaStream_t)>;
+using Launcher = std::function<cudaError_t(const void*, const void*, float*, int64_t, int64_t, int,
+                                           cudaStream_t)>;
 
 torch::Tensor launch_gemv(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
                           int64_t min_threads, const Launcher& launcher,
                           torch::ScalarType w_type = torch::kBFloat16) {
   TORCH_CHECK(W.is_cuda() && x.is_cuda(), "W and x must be CUDA tensors");
   TORCH_CHECK(W.device() == x.device(), "W and x must be on the same device");
-  TORCH_CHECK(W.scalar_type() == w_type && x.scalar_type() == torch::kBFloat16,
-              "W must be ", w_type, " and x bfloat16");
+  TORCH_CHECK(W.scalar_type() == w_type && x.scalar_type() == torch::kBFloat16, "W must be ",
+              w_type, " and x bfloat16");
   TORCH_CHECK(W.dim() == 2 && x.dim() == 1 && x.size(0) == W.size(1),
               "expected W of shape (m, n) and x of shape (n,), got ", W.sizes(), " and ",
               x.sizes());
@@ -84,12 +83,11 @@ torch::Tensor gemv_fp8(const torch::Tensor& Q, const torch::Tensor& x, int64_t t
 }
 
 torch::Tensor gemv_template(const torch::Tensor& W, const torch::Tensor& x, int64_t threads,
-                            int64_t rows_per_block, int64_t vec, int64_t unroll,
-                            int64_t flags) {
+                            int64_t rows_per_block, int64_t vec, int64_t unroll, int64_t flags) {
   TORCH_CHECK(rows_per_block > 0 && threads % rows_per_block == 0,
               "rows_per_block must divide threads");
-  const auto launcher = [&](const void* w, const void* xp, float* y, int64_t m, int64_t n,
-                            int t, cudaStream_t stream) {
+  const auto launcher = [&](const void* w, const void* xp, float* y, int64_t m, int64_t n, int t,
+                            cudaStream_t stream) {
     return pck::gemv_template(w, xp, y, m, n, t, static_cast<int>(rows_per_block),
                               static_cast<int>(vec), static_cast<int>(unroll),
                               static_cast<int>(flags), stream);
@@ -126,9 +124,8 @@ torch::Tensor gemv_template_q8(const torch::Tensor& Wq, const torch::Tensor& S,
   return y;
 }
 
-torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x,
-                          torch::Tensor& tickets, int64_t threads, int64_t vec, int64_t splits,
-                          double skip_below) {
+torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x, torch::Tensor& tickets,
+                          int64_t threads, int64_t vec, int64_t splits, double skip_below) {
   TORCH_CHECK(WT.is_cuda() && x.is_cuda() && WT.device() == x.device(),
               "WT and x must be CUDA tensors on one device");
   TORCH_CHECK(WT.scalar_type() == torch::kBFloat16 && x.scalar_type() == torch::kBFloat16,
@@ -145,11 +142,11 @@ torch::Tensor gemv_column(const torch::Tensor& WT, const torch::Tensor& x,
                   tickets.scalar_type() == torch::kInt32 && tickets.is_contiguous() &&
                   tickets.numel() >= pck::column_tiles(m, static_cast<int>(vec)),
               "tickets must be a zeroed int32 CUDA tensor with at least one entry per tile");
-  const cudaError_t err = pck::gemv_column(
-      WT.data_ptr(), x.data_ptr(), y.data_ptr<float>(), scratch.data_ptr<float>(),
-      reinterpret_cast<unsigned*>(tickets.data_ptr<int32_t>()), m, n,
-      static_cast<int>(threads), static_cast<int>(vec), static_cast<int>(splits),
-      static_cast<float>(skip_below), c10::cuda::getCurrentCUDAStream().stream());
+  const cudaError_t err =
+      pck::gemv_column(WT.data_ptr(), x.data_ptr(), y.data_ptr<float>(), scratch.data_ptr<float>(),
+                       reinterpret_cast<unsigned*>(tickets.data_ptr<int32_t>()), m, n,
+                       static_cast<int>(threads), static_cast<int>(vec), static_cast<int>(splits),
+                       static_cast<float>(skip_below), c10::cuda::getCurrentCUDAStream().stream());
   TORCH_CHECK(err == cudaSuccess, "column gemv launch failed: ", cudaGetErrorString(err));
   return y;
 }
@@ -166,9 +163,8 @@ using CheckOutputs = std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>;
 // Validates one check's tensors and fills its descriptor; returns its outputs.
 CheckOutputs describe(const torch::Tensor& c, const torch::Tensor& a, const torch::Tensor& r,
                       const torch::Tensor& x, const torch::Tensor& y, torch::Tensor& partial_cx,
-                      torch::Tensor& partial_s, torch::Tensor& counters, double coef,
-                      double geps, double tau_floor, const torch::Device& device,
-                      pck::CheckDesc& d) {
+                      torch::Tensor& partial_s, torch::Tensor& counters, double coef, double geps,
+                      double tau_floor, const torch::Device& device, pck::CheckDesc& d) {
   check_cuda(c, "c", torch::kFloat32, device);
   check_cuda(a, "a", torch::kBFloat16, device);
   check_cuda(r, "r", torch::kInt8, device);
@@ -232,10 +228,10 @@ std::vector<CheckOutputs> blocked_check(
   const size_t count = c.size();
   TORCH_CHECK(count >= 1 && count <= static_cast<size_t>(pck::kMaxBatch),
               "batch size must be in [1, ", pck::kMaxBatch, "], got ", count);
-  TORCH_CHECK(a.size() == count && r.size() == count && x.size() == count &&
-                  y.size() == count && partial_cx.size() == count &&
-                  partial_s.size() == count && counters.size() == count &&
-                  coef.size() == count && geps.size() == count && tau_floor.size() == count,
+  TORCH_CHECK(a.size() == count && r.size() == count && x.size() == count && y.size() == count &&
+                  partial_cx.size() == count && partial_s.size() == count &&
+                  counters.size() == count && coef.size() == count && geps.size() == count &&
+                  tau_floor.size() == count,
               "all argument lists must have the same length");
   TORCH_CHECK(y[0].is_cuda(), "y must be a CUDA tensor");
   const auto device = y[0].device();
@@ -248,15 +244,13 @@ std::vector<CheckOutputs> blocked_check(
   for (size_t g = 0; g < count; ++g) {
     TORCH_CHECK(y[g].is_cuda(), "y must be a CUDA tensor");
     outputs.push_back(describe(c[g], a[g], r[g], x[g], y[g], partial_cx[g], partial_s[g],
-                               counters[g], coef[g], geps[g], tau_floor[g], device,
-                               batch.desc[g]));
+                               counters[g], coef[g], geps[g], tau_floor[g], device, batch.desc[g]));
     const auto& d = batch.desc[g];
     batch.start[g + 1] =
         batch.start[g] + static_cast<int64_t>(d.checks) * d.num_blocks * d.segments;
   }
   TORCH_CHECK(batch.start[count] <= std::numeric_limits<int32_t>::max(), "too many blocks");
-  const cudaError_t err =
-      pck::blocked_check(batch, c10::cuda::getCurrentCUDAStream().stream());
+  const cudaError_t err = pck::blocked_check(batch, c10::cuda::getCurrentCUDAStream().stream());
   TORCH_CHECK(err == cudaSuccess, "checker kernel launch failed: ", cudaGetErrorString(err));
   return outputs;
 }
@@ -264,9 +258,8 @@ std::vector<CheckOutputs> blocked_check(
 // Checks sampler output for every row of logits; returns (passed, min_sel, max_rej, mass,
 // mass_without_smallest), each of shape (rows,).
 std::vector<torch::Tensor> sampling_check(const torch::Tensor& logits, const torch::Tensor& sel,
-                                          const torch::Tensor& len, int64_t k, bool top_p,
-                                          double p, double temperature, double slack,
-                                          int64_t segments) {
+                                          const torch::Tensor& len, int64_t k, bool top_p, double p,
+                                          double temperature, double slack, int64_t segments) {
   TORCH_CHECK(logits.is_cuda(), "logits must be a CUDA tensor");
   const auto device = logits.device();
   check_cuda(logits, "logits", torch::kFloat32, device);
@@ -284,7 +277,8 @@ std::vector<torch::Tensor> sampling_check(const torch::Tensor& logits, const tor
 
   const c10::cuda::CUDAGuard guard(device);
   auto opts = logits.options();
-  auto scratch = torch::zeros({rows, pck::sampling_scratch_words(vocab)}, opts.dtype(torch::kInt32));
+  auto scratch =
+      torch::zeros({rows, pck::sampling_scratch_words(vocab)}, opts.dtype(torch::kInt32));
   auto partials =
       torch::empty({rows * segments * pck::sampling_partial_bytes()}, opts.dtype(torch::kUInt8));
   auto passed = torch::empty({rows}, opts.dtype(torch::kBool));
@@ -308,9 +302,9 @@ std::vector<torch::Tensor> sampling_check(const torch::Tensor& logits, const tor
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("gemv_naive", &gemv_naive, "Naive BF16 GEMV with FP32 accumulation (y in FP32)",
         pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"));
-  m.def("gemv_coalesced",
-        &gemv_coalesced, "Coalesced BF16 GEMV with 16-byte loads and warp-shuffle reduction",
-        pybind11::arg("W"), pybind11::arg("x"), pybind11::arg("threads"));
+  m.def("gemv_coalesced", &gemv_coalesced,
+        "Coalesced BF16 GEMV with 16-byte loads and warp-shuffle reduction", pybind11::arg("W"),
+        pybind11::arg("x"), pybind11::arg("threads"));
   m.def("gemv_fp8", &gemv_fp8,
         "Coalesced GEMV over FP8 E4M3 weights (16 per load), BF16 x, FP32 accumulation",
         pybind11::arg("Q"), pybind11::arg("x"), pybind11::arg("threads"));
@@ -324,9 +318,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "The agent's GEMV template over an INT8 copy of W (pck.agent.config.quantize_rows)",
         pybind11::arg("Wq"), pybind11::arg("S"), pybind11::arg("x"), pybind11::arg("threads"),
         pybind11::arg("rows_per_block"), pybind11::arg("vec"), pybind11::arg("unroll"));
-  m.def("gemv_column", &gemv_column,
-        "The agent's column-major GEMV template over WT = W^T (n, m)", pybind11::arg("WT"),
-        pybind11::arg("x"), pybind11::arg("tickets"), pybind11::arg("threads"),
+  m.def("gemv_column", &gemv_column, "The agent's column-major GEMV template over WT = W^T (n, m)",
+        pybind11::arg("WT"), pybind11::arg("x"), pybind11::arg("tickets"), pybind11::arg("threads"),
         pybind11::arg("vec"), pybind11::arg("splits"), pybind11::arg("skip_below"));
   m.def("blocked_check", &blocked_check,
         "Trusted blocked checksum checker for up to 8 GEMV outputs in one launch; returns "

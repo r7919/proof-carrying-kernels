@@ -25,6 +25,7 @@ from collections.abc import Callable
 import torch
 
 from pck.cuda import DEFAULT_BLOCK, GpuBlockedChecker, check_many, gemv_coalesced, gemv_naive
+from pck.cuda.timing import device_name
 from pck.fp import tree_height
 
 THREADS = 256
@@ -152,7 +153,7 @@ def main() -> None:
     if args.quick:
         args.target, args.redraw, args.flip_trials = 20_000, 5, 5
 
-    print(f"device: {torch.cuda.get_device_name()}; torch {torch.__version__}; seed {args.seed}")
+    print(f"device: {device_name()}; torch {torch.__version__}; seed {args.seed}")
     for block in sorted({DEFAULT_BLOCK, 64}, reverse=True):
         false_alarms(block, args.checks, args.target, args.redraw, args.seed)
     bit_flips(args.flip_trials, args.seed)

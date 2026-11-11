@@ -11,15 +11,15 @@ namespace pck {
 // Everything needed to check one GEMV output y = W x. Pointers are device pointers; a and x
 // point to BF16 data.
 struct CheckDesc {
-  const float* c;         // (K, nb, n) FP32 checksums
-  const void* a;          // (nb, n) BF16, rounded up
-  const int8_t* r;        // (K, nb, b) signs
-  const void* x;          // (n,) BF16
-  const float* y;         // (nb * b,) FP32 output to check
-  double* partial_cx;     // (K, nb, segments) scratch
-  double* partial_s;      // (K, nb, segments) scratch
-  unsigned int* counters; // (K, nb) zero between calls
-  bool* passed;           // (K, nb) outputs
+  const float* c;          // (K, nb, n) FP32 checksums
+  const void* a;           // (nb, n) BF16, rounded up
+  const int8_t* r;         // (K, nb, b) signs
+  const void* x;           // (n,) BF16
+  const float* y;          // (nb * b,) FP32 output to check
+  double* partial_cx;      // (K, nb, segments) scratch
+  double* partial_s;       // (K, nb, segments) scratch
+  unsigned int* counters;  // (K, nb) zero between calls
+  bool* passed;            // (K, nb) outputs
   double* rho;
   double* tau;
   int64_t n;

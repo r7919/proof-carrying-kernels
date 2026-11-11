@@ -77,6 +77,16 @@ wheels = [
 ]
 
 [[package]]
+name = "clang-format"
+version = "23.1.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/9c/6db0d62faba7eec81d1d9816a84adf4c5af1229f8bdbd7d9484f43ee5488/clang_format-23.1.5.tar.gz", hash = "sha256:aba6eb1b86cf928e310bee6d1eb75733fe7c4129932e6b6eaaff4706dbf293d8", size = 11503, upload-time = "2026-11-04T14:25:59.889Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0e/cc/06adcfb7dfaea4d2c1929202021d4afcdc26915dc75fc0c72d63855da553/clang_format-23.1.5-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d97ce49911ba8c89ef3f3c0735a9c7818e4780ab4812c67d1c5fcd829d16ae52", size = 1906891, upload-time = "2026-11-04T14:25:43.183Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/c0/def5fd3d5e01e31a59c18e26ec0b8ee53a6bfe06be64f00a3dbdd7cab3e8/clang_format-23.1.5-py2.py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:1f3589ec54a5ce9baf73c0c4f7b6e3f9201635c8585b5812bfb71d5fa8782a12", size = 2920235, upload-time = "2026-11-04T14:25:53.917Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -727,6 +737,7 @@ rl = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "clang-format" },
     { name = "hypothesis" },
     { name = "ml-dtypes" },
     { name = "mypy" },
@@ -750,6 +761,7 @@ provides-extras = ["gpu", "models", "rl"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "clang-format", specifier = ">=21" },
     { name = "hypothesis", specifier = ">=6.100" },
     { name = "ml-dtypes", specifier = ">=0.5" },
     { name = "mypy", specifier = ">=1.10" },

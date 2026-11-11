@@ -142,12 +142,11 @@ __global__ void column_kernel(const __nv_bfloat16* __restrict__ WT,
 
 template <int VEC>
 void launch(const __nv_bfloat16* WT, const __nv_bfloat16* x, float* y, float* scratch,
-            unsigned* tickets, int64_t m, int64_t n, int threads, int splits,
-            float skip_below, cudaStream_t stream) {
+            unsigned* tickets, int64_t m, int64_t n, int threads, int splits, float skip_below,
+            cudaStream_t stream) {
   const dim3 grid(static_cast<unsigned>((m + kWarp * VEC - 1) / (kWarp * VEC)),
                   static_cast<unsigned>(splits));
-  column_kernel<VEC><<<grid, threads, 0, stream>>>(WT, x, y, scratch, tickets, m, n,
-                                                   skip_below);
+  column_kernel<VEC><<<grid, threads, 0, stream>>>(WT, x, y, scratch, tickets, m, n, skip_below);
 }
 
 }  // namespace
@@ -156,22 +155,28 @@ int64_t column_tiles(int64_t m, int vec) { return (m + kWarp * vec - 1) / (kWarp
 
 // scratch: splits * m floats; tickets: column_tiles(m, vec) zeros, left zero on return
 // (so they can be reused, by one call at a time). Both unused when splits == 1.
-cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch,
-                        unsigned* tickets, int64_t m, int64_t n, int threads, int vec,
-                        int splits, float skip_below, cudaStream_t stream) {
+cudaError_t gemv_column(const void* WT, const void* x, float* y, float* scratch, unsigned* tickets,
+                        int64_t m, int64_t n, int threads, int vec, int splits, float skip_below,
+                        cudaStream_t stream) {
   if (threads < kWarp || threads > kWarp * kMaxWarps || threads % kWarp != 0 ||
       ((threads / kWarp) & (threads / kWarp - 1)) != 0 || splits < 1 || splits > kMaxSplits ||
-      (splits & (splits - 1)) != 0 || m % vec != 0 ||
-      reinterpret_cast<uintptr_t>(WT) % 16 != 0) {
+      (splits & (splits - 1)) != 0 || m % vec != 0 || reinterpret_cast<uintptr_t>(WT) % 16 != 0) {
     return cudaErrorInvalidValue;
   }
   const auto* w = static_cast<const __nv_bfloat16*>(WT);
   const auto* xp = static_cast<const __nv_bfloat16*>(x);
   switch (vec) {
-    case 2: launch<2>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream); break;
-    case 4: launch<4>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream); break;
-    case 8: launch<8>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream); break;
-    default: return cudaErrorInvalidValue;
+    case 2:
+      launch<2>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream);
+      break;
+    case 4:
+      launch<4>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream);
+      break;
+    case 8:
+      launch<8>(w, xp, y, scratch, tickets, m, n, threads, splits, skip_below, stream);
+      break;
+    default:
+      return cudaErrorInvalidValue;
   }
   return cudaGetLastError();
 }

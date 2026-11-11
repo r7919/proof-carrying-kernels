@@ -102,13 +102,12 @@ struct Partial {
 };
 
 __global__ void __launch_bounds__(kThreads)
-    segment_kernel(const float* __restrict__ logits, const int64_t* __restrict__ len,
-                   int64_t vocab, int64_t max_len, int64_t words, int64_t seg_len, int64_t k,
-                   bool top_p, double p, double temperature, double slack,
-                   unsigned int* __restrict__ scratch, Partial* __restrict__ partials,
-                   bool* __restrict__ passed, float* __restrict__ min_sel_out,
-                   float* __restrict__ max_rej_out, double* __restrict__ mass_out,
-                   double* __restrict__ without_out) {
+    segment_kernel(const float* __restrict__ logits, const int64_t* __restrict__ len, int64_t vocab,
+                   int64_t max_len, int64_t words, int64_t seg_len, int64_t k, bool top_p, double p,
+                   double temperature, double slack, unsigned int* __restrict__ scratch,
+                   Partial* __restrict__ partials, bool* __restrict__ passed,
+                   float* __restrict__ min_sel_out, float* __restrict__ max_rej_out,
+                   double* __restrict__ mass_out, double* __restrict__ without_out) {
   __shared__ float fscratch[3 * kWarps];
   __shared__ double dscratch[kWarps];
   __shared__ bool is_last;

@@ -25,8 +25,8 @@ namespace pck {
 namespace {
 
 __global__ void gemv_bf16_naive_kernel(const __nv_bfloat16* __restrict__ W,
-                                       const __nv_bfloat16* __restrict__ x,
-                                       float* __restrict__ y, int64_t n, int64_t chunk) {
+                                       const __nv_bfloat16* __restrict__ x, float* __restrict__ y,
+                                       int64_t n, int64_t chunk) {
   extern __shared__ float partial[];
   const int t = static_cast<int>(threadIdx.x);
   const __nv_bfloat16* w_row = W + static_cast<int64_t>(blockIdx.x) * n;
@@ -137,8 +137,7 @@ __device__ __forceinline__ float halving_sum(float v, int width) {
 }
 
 template <typename WT, int V>
-__global__ void gemv_coalesced_kernel(const WT* __restrict__ W,
-                                      const __nv_bfloat16* __restrict__ x,
+__global__ void gemv_coalesced_kernel(const WT* __restrict__ W, const __nv_bfloat16* __restrict__ x,
                                       float* __restrict__ y, int64_t n, int64_t per_thread,
                                       bool vector_loads) {
   __shared__ float warp_sums[kWarp];
@@ -185,10 +184,9 @@ cudaError_t gemv_bf16_coalesced(const void* W, const void* x, float* y, int64_t 
   const int64_t per_thread = ((n + kVec - 1) / kVec + threads - 1) / threads;
   const bool vector_loads = n % kVec == 0 && reinterpret_cast<uintptr_t>(W) % 16 == 0 &&
                             reinterpret_cast<uintptr_t>(x) % 16 == 0;
-  gemv_coalesced_kernel<__nv_bfloat16, kVec>
-      <<<static_cast<unsigned int>(m), threads, 0, stream>>>(
-          static_cast<const __nv_bfloat16*>(W), static_cast<const __nv_bfloat16*>(x), y, n,
-          per_thread, vector_loads);
+  gemv_coalesced_kernel<__nv_bfloat16, kVec><<<static_cast<unsigned int>(m), threads, 0, stream>>>(
+      static_cast<const __nv_bfloat16*>(W), static_cast<const __nv_bfloat16*>(x), y, n, per_thread,
+      vector_loads);
   return cudaGetLastError();
 }
 
@@ -197,10 +195,9 @@ cudaError_t gemv_fp8_coalesced(const void* W, const void* x, float* y, int64_t m
   const int64_t per_thread = ((n + kVecFp8 - 1) / kVecFp8 + threads - 1) / threads;
   const bool vector_loads = n % kVecFp8 == 0 && reinterpret_cast<uintptr_t>(W) % 16 == 0 &&
                             reinterpret_cast<uintptr_t>(x) % 16 == 0;
-  gemv_coalesced_kernel<uint8_t, kVecFp8>
-      <<<static_cast<unsigned int>(m), threads, 0, stream>>>(
-          static_cast<const uint8_t*>(W), static_cast<const __nv_bfloat16*>(x), y, n,
-          per_thread, vector_loads);
+  gemv_coalesced_kernel<uint8_t, kVecFp8><<<static_cast<unsigned int>(m), threads, 0, stream>>>(
+      static_cast<const uint8_t*>(W), static_cast<const __nv_bfloat16*>(x), y, n, per_thread,
+      vector_loads);
   return cudaGetLastError();
 }
 

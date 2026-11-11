@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
+
+
+def device_name() -> str:
+    """The GPU's model name, without a trailing form-factor suffix ("... GPU"), so recorded
+    outputs name the chip only."""
+    return re.sub(r"\s+\w+ GPU$", "", torch.cuda.get_device_name())
 
 
 @dataclass

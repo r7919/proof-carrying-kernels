@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch
 
 from pck.cuda import check_topk_gpu, check_topp_gpu, topk_sample, topp_select
-from pck.cuda.timing import ColdL2Timer
+from pck.cuda.timing import ColdL2Timer, device_name
 
 VOCAB = 151_936
 K, P = 50, 0.9
@@ -20,7 +20,7 @@ K, P = 50, 0.9
 
 def main() -> None:
     timer = ColdL2Timer(20, 200)
-    print(f"device: {torch.cuda.get_device_name()}; V = {VOCAB}, k = {K}, p = {P}")
+    print(f"device: {device_name()}; V = {VOCAB}, k = {K}, p = {P}")
     print(f"{'batch':>5s} {'step':>22s} {'median ms':>10s} {'p90 ms':>8s}")
     for batch in (1, 8):
         logits = torch.randn(batch, VOCAB, device="cuda") * 3

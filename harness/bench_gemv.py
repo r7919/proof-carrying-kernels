@@ -23,7 +23,7 @@ from collections.abc import Callable
 import torch
 
 from pck.cuda import gemv_coalesced, gemv_naive
-from pck.cuda.timing import ColdL2Timer, copy_bandwidth_gbps
+from pck.cuda.timing import ColdL2Timer, copy_bandwidth_gbps, device_name
 
 SHAPES = [(896, 896), (1536, 1536), (2048, 2048), (3584, 3584), (4096, 4096), (14336, 4096)]
 
@@ -53,9 +53,8 @@ def main() -> None:
 
     torch.manual_seed(0)
     timer = ColdL2Timer(args.warmup, args.reps)
-    props = torch.cuda.get_device_properties(0)
     copy_bw = copy_bandwidth_gbps(timer)
-    print(f"device: {props.name}, L2 {timer.flush.numel() // 2 >> 20} MiB")
+    print(f"device: {device_name()}, L2 {timer.flush.numel() // 2 >> 20} MiB")
     print(f"measured copy bandwidth: {copy_bw:.0f} GB/s (= 100% below)")
     if args.peak_gbps:
         print(f"spec-sheet bandwidth: {args.peak_gbps:.0f} GB/s")

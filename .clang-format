@@ -1,0 +1,3 @@
+# C++ and CUDA sources: Google style at the line length the Python code uses.
+BasedOnStyle: Google
+ColumnLimit: 100

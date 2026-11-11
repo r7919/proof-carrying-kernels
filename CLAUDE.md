@@ -11,6 +11,7 @@ uv run pytest tests/gpu              # GPU tests only
 uv run pytest tests/test_checker.py::test_name   # a single test
 uv run mypy                          # strict, whole tree
 uv run ruff check . && uv run ruff format .
+git ls-files '*.cu' '*.cpp' '*.h' | xargs uv run clang-format -i   # C++/CUDA style
 cd lean && lake build && lake env lean scripts/Axioms.lean   # proofs + axiom audit (needs elan)
 ```
 
@@ -51,6 +52,8 @@ The files in `TRUSTED` in `src/pck/manifest.py` are hash-pinned in
 - Numbers in `README.md` and `docs/results.md` come from `harness/` outputs: regenerate
   them, don't edit by hand. Word claims no stronger than the evidence.
 - Ask before starting GPU training runs; they take hours on the one GPU.
+- C++ and CUDA follow `.clang-format` (Google style, 100 columns); formatting a trusted
+  file changes its hash, so re-pin.
 - Python 3.11+, fully typed, line length 100. Docstrings are short prose saying what a
   function guarantees, not `Args:`/`Returns:` blocks. Warnings are errors in tests; GPU
   tests carry `pytest.mark.gpu`.

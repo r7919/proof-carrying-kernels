@@ -30,7 +30,7 @@ from pck.cuda import (
     check_many,
     gemv_coalesced,
 )
-from pck.cuda.timing import ColdL2Timer
+from pck.cuda.timing import ColdL2Timer, device_name
 from pck.fp import tree_height
 
 THREADS = 256
@@ -110,7 +110,7 @@ def main() -> None:
     bank_mib = sum(c.c.numel() * 4 + c.a.numel() * 2 for *_, c in mats) / 2**20
 
     print(
-        f"device: {torch.cuda.get_device_name()}; {args.layout} layout ({len(mats)} GEMVs);"
+        f"device: {device_name()}; {args.layout} layout ({len(mats)} GEMVs);"
         f" b = {args.block}, K = {args.checks};"
         f" weights {weight_mib:.0f} MiB, checksum bank {bank_mib:.1f} MiB"
         f" ({bank_mib / weight_mib:.1%})"
