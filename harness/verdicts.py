@@ -16,6 +16,7 @@ after new variants were added to the config space; existing entries are kept.
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -72,7 +73,7 @@ def main() -> None:
     table = VerdictTable.load(args.out) if args.out.exists() else VerdictTable()
     if args.add_missing:
         add_missing(table, args.out, args.jobs)
-        print(f"wrote {args.out}")
+        print(f"wrote {os.path.relpath(args.out)}")
         return
     todo = [i for i in range(len(ALL)) if ALL[i].key not in table.tasks]  # resumable
     order = sorted(todo, key=lambda i: ALL[i].m * ALL[i].n)  # small ones first
@@ -81,7 +82,7 @@ def main() -> None:
             table.tasks[key] = verdicts
             print(f"{key:>36s}: {len(verdicts)} classes in {secs:.0f} s", flush=True)
             table.save(args.out)
-    print(f"wrote {args.out}")
+    print(f"wrote {os.path.relpath(args.out)}")
 
 
 if __name__ == "__main__":

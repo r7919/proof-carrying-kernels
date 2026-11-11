@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import statistics
 from collections.abc import Callable
 from functools import partial
@@ -199,7 +200,7 @@ def main() -> None:
             + " ".join(cells)
         )
         table.save(args.out)
-    print(f"wrote {args.out}")
+    print(f"wrote {os.path.relpath(args.out)}")
 
 
 if __name__ == "__main__":
