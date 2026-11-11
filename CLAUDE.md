@@ -11,7 +11,7 @@ uv run pytest tests/gpu              # GPU tests only
 uv run pytest tests/test_checker.py::test_name   # a single test
 uv run mypy                          # strict, whole tree
 uv run ruff check . && uv run ruff format .
-cd lean && lake build && lake env lean scripts/Axioms.lean   # proofs + axiom audit
+cd lean && lake build && lake env lean scripts/Axioms.lean   # proofs + axiom audit (needs elan)
 ```
 
 CI installs only the base package (no torch). Check coverage the way CI sees it:
