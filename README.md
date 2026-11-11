@@ -248,8 +248,8 @@ CI runs on pull requests and pushes to `main`, as three path-filtered workflows:
 
 ## Status and limitations
 
-The code, proofs and experiments described here are complete, and CI is green. The
-project is **paused**, not abandoned. Open questions, with what would answer them:
+The code, proofs and experiments described here are complete, and CI is green. Open
+questions, with what would answer them:
 
 - **Scale.** The cheating results use small models (Qwen3-0.6B and 1.7B), one or two
   training tasks and 3 seeds per regime. Without demonstrations, Qwen3-1.7B found the
