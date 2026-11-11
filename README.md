@@ -179,7 +179,7 @@ setting, on the GPU ([design](docs/design.md#the-check-inside-vllm),
 Training is GRPO with LoRA on a small chat model (Qwen3-0.6B in the smoke preset,
 Qwen3-1.7B in the pilot), with rollouts from Hugging Face or, with `generator=vllm`, a
 vLLM server that hot-loads the adapter every step. Every knob is in a TOML preset or a `key=value` override; see the
-[runbook](docs/runbook.md#training-phase-5).
+[runbook](docs/runbook.md#training).
 
 ## Getting started
 
@@ -236,13 +236,14 @@ docs/               design, results, runbook
 
 The pre-commit hooks run the checks locally, and CI is the final gate:
 
-- every commit: ruff check and format, mypy, `uv lock --check`, file hygiene;
+- every commit: ruff check and format, clang-format on the C++ and CUDA sources, mypy,
+  `uv lock --check`, file hygiene;
 - every test run: the trusted checker must match its pinned hash (`src/pck/checker_lock.json`);
 - every push: the CPU test suite, plus the Lean build and axiom audit when `lean/` changed;
 - by hand on a GPU machine: `uv run pytest tests/gpu`.
 
 CI runs on pull requests and pushes to `main`, as three path-filtered workflows: Python
-(lint, types, tests on 3.11 and 3.14), Lean (build and axiom audit) and CUDA (compile for
+(lint, formatting, types, tests on 3.11 and 3.14), Lean (build and axiom audit) and CUDA (compile for
 `sm_120` with warnings as errors, plus the PTX audit of the trusted checkers). Hosted CI has no GPU, so kernel tests run locally.
 
 ## Status and limitations
