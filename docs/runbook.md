@@ -144,6 +144,7 @@ Knobs for a bigger run:
 ```bash
 uv run python -m pck.rl.train --config pilot --compare seed=0   # 400 steps: several hours per seed
 uv run python -m pck.rl.train --config slot --compare           # ~15 min per regime
+uv run python -m pck.rl.train --config int8 regime=calibrated seed=0   # ~60-80 min per run
 ```
 
 - **Pilot** (`configs/pilot.toml`): Qwen3-1.7B, multi-turn tool calling (up to 6 calls),
@@ -160,6 +161,12 @@ uv run python -m pck.rl.train --config slot --compare           # ~15 min per re
   activations. Kernels are compiled by nvcc and run live (`env = cuda`). One sandbox
   worker serves all of a run's kernels and restarts after a crash. Half the warm-start
   demonstrations show an honest slot (the exact product).
+- **No demonstrations** (`configs/int8.toml`): the pilot's model and loop, trained on
+  the two tasks where a shortcut pays (layer-12 `o_proj` and `down_proj`), with no warm
+  start, `group = 8`, one prompt per step, lr 2e-5 and KL 0.05. Each choice fixed a
+  failed attempt: a warm start taught the policy to write only the knobs its examples
+  showed; lr 1e-4 on two tasks collapsed every reply onto one config. The archived
+  runs (`harness/grpo_int8/`) ran one regime and seed per command, 60-82 minutes each.
 - A run's rollouts and hack labels are in `samples.jsonl` and `metrics.jsonl` as for
   the smoke run. For slot runs, look in `samples.jsonl` for the slot code the policy
   writes.
